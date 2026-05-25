@@ -56,16 +56,17 @@ Project-agnostic; `recall`/`learn` take `--file <learnings.ndjson>` (default
 ```
 learnings recall [--file <learnings.ndjson>]   # default .learnings.ndjson
   [--paths a/b.ts,c/d.ts]   # files in scope (e.g. plan target_files); omit = global ([]) only
-  [--max-bytes 8000]        # per-page byte budget (default 8000)
-  [--page 1]                # 1-based page of the ranked list (default 1)
+  [--max-bytes N]           # opt-in byte budget per page; default unbounded (all matched)
+  [--page 1]                # 1-based page (only meaningful with --max-bytes)
   [--format text|json]      # text = flat bullets (default); json = raw entries
 ```
 
 Behavior: read the store file (missing file ⇒ empty); keep `status=active`; path
 filter (any `entry.paths` glob matches any `--paths`, OR `entry.paths==[]`);
-**rank** most-relevant first; **paginate** to one `--max-bytes` page of whole
-entries; emit. **Exit 0 with empty output when nothing matches** — callers must
-tolerate empty.
+**rank** most-relevant first; emit **all** matched entries (unbounded by
+default). **Exit 0 with empty output when nothing matches** — callers must
+tolerate empty. The default favors **recall over precision**: issue/planning
+callers want every learning that could apply, ranked, and tolerate some noise.
 
 **Ranking — earlier = more relevant.** The list is ordered so the first bullets
 are the most relevant, which is exactly what a page keeps:
@@ -76,14 +77,20 @@ are the most relevant, which is exactly what a page keeps:
    `services/**` catch-all that merely also covers the file;
 3. then newer date before older.
 
-**Pagination.** Each page holds as many whole, ranked entries as fit in
-`--max-bytes` — a learning is never split or truncated across a page boundary
-(an entry larger than the budget gets its own page). Pages are **disjoint and
-exhaustive**, so `--page 2`, `--page 3` … walk the lower-ranked tail without
-re-emitting anything the caller already saw. When more than one page exists, a
-`note: page P/N, showing … most relevant first. Re-run with --page P+1 …` line
-is written to **stderr** (stdout stays pure bullets/JSON) so the cutoff is never
-silent.
+**Output annotation — the matching rule.** Each rendered bullet ends with *why
+it surfaced*, so the consumer can judge relevance: `(global)` for a cross-cutting
+`[]` entry, otherwise the entry glob(s) that actually matched `--paths` (the
+matching rule, not the entry's full scope — non-matching globs are hidden).
+
+**Pagination (opt-in via `--max-bytes`).** With no `--max-bytes` recall is
+unbounded — one page with every matched entry. Passing a positive `--max-bytes`
+bounds each page to that many bytes of whole, ranked entries — a learning is
+never split or truncated across a page boundary (an entry larger than the budget
+gets its own page). Pages are **disjoint and exhaustive**, so `--page 2`,
+`--page 3` … walk the lower-ranked tail without re-emitting anything the caller
+already saw. When more than one page exists, a `note: page P/N, showing … most
+relevant first. Re-run with --page P+1 …` line is written to **stderr** (stdout
+stays pure bullets/JSON) so the cutoff is never silent.
 
 ### `learn`
 

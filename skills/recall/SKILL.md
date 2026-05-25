@@ -27,20 +27,22 @@ The engine is the `learnings` CLI on PATH. The store is the project's
 
    (reads `.learnings.ndjson` in the cwd; add `--file <path>` for a different store.)
 
-   Add `--max-bytes N` to size each page. With no `--paths`, you get only the
-   global (cross-cutting, `[]`) learnings.
+   By default recall is **unbounded** — it returns *every* learning that could
+   apply, ranked most-relevant first. That's intentional for planning: you want
+   high recall and can judge out the few that don't fit. With no `--paths`, you
+   get only the global (cross-cutting, `[]`) learnings.
 
 3. **Use the returned bullets** as context for the plan/implementation. The
-   output is a flat list **ordered most-relevant first** — earlier bullets matter
-   most (most-specific path match, then newest); each bullet shows its path
-   scope. Treat the top bullets as the highest-priority guidance. If the output
-   is empty, there are simply no scoped learnings — proceed.
+   output is a flat list **ordered most-relevant first** (most-specific path
+   match, then newest). Each bullet ends with its **matching rule** — the glob
+   that matched (e.g. `(services/app/src/lib/components/review/**)`) or
+   `(global)` for cross-cutting ones — so you can judge how directly it applies:
+   an exact/narrow glob is squarely on-point; a broad glob or `(global)` is more
+   ambient. If the output is empty, there are no scoped learnings — proceed.
 
-4. **Want more?** When the byte budget doesn't fit everything, recall prints a
-   `note: page P/N …` to stderr. Re-run with `--page 2` (then `--page 3` …) to
-   pull the next page of lower-ranked learnings — pages are disjoint, so you
-   never re-read one you already have. Page only as far as you actually need;
-   page 1 is the sharpest slice.
+4. **Too much?** Only if you need to bound the volume, pass `--max-bytes N` to
+   page the ranked list (`--page 2`, `--page 3` … walk disjoint pages, no
+   repeats). You usually won't need this for a single issue.
 
 Do **not** open `.learnings.ndjson` (or any learnings file) directly; that
 re-introduces the whole-file, token-heavy read this system replaces.

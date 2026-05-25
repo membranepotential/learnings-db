@@ -157,14 +157,27 @@ test('boundByBytes: respects budget but never returns empty for non-empty input'
 	assert.equal(boundByBytes([], 100).length, 0);
 });
 
-test('renderText: flat bullets with a path hint, in input order', () => {
+test('renderText: flat bullets with a scope hint, in input order', () => {
 	const out = renderText([
 		{ text: 'cold start fails', paths: ['src/routes/**'] },
 		{ text: 'plan for migrations', paths: [] }
 	]);
 	assert.doesNotMatch(out, /^##/m); // no area headers anymore
-	assert.match(out, /- cold start fails {2}\(src\/routes\/\*\*\)/);
-	assert.match(out, /- plan for migrations/);
+	assert.match(out, /- cold start fails {2}\(src\/routes\/\*\*\)/); // no reqPaths ⇒ full scope
+	assert.match(out, /- plan for migrations {2}\(global\)/); // [] ⇒ labeled global
+});
+
+test('renderText: annotates the matching rule (the glob that matched, not full scope)', () => {
+	const entries = [
+		{ text: 'review gotcha', paths: ['services/app/src/lib/components/review/**', 'services/app/e2e/**'] },
+		{ text: 'cross cutting', paths: [] }
+	];
+	const out = renderText(entries, { paths: ['services/app/src/lib/components/review/ProvExpanded.svelte'] });
+	// only the matching glob is shown; the non-matching e2e glob is hidden so the
+	// consumer sees exactly why this surfaced
+	assert.match(out, /- review gotcha {2}\(services\/app\/src\/lib\/components\/review\/\*\*\)/);
+	assert.doesNotMatch(out, /e2e/);
+	assert.match(out, /- cross cutting {2}\(global\)/);
 });
 
 test('buildEntry: defaults, provenance, derived id, and no phase/kind/area', () => {

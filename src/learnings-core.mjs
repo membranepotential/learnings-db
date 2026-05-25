@@ -165,11 +165,19 @@ export function rankEntries(entries, { paths } = {}) {
 }
 
 // One grouped-bullet line for an entry (the unit of both rendering and byte
-// budgeting, so the budget reflects what is actually emitted).
-function bulletLine(e) {
+// budgeting, so the budget reflects what is actually emitted). The trailing
+// annotation states *why this learning surfaced* so the consumer can judge
+// relevance: `(global)` for a cross-cutting ([]) entry, else the entry glob(s)
+// that actually matched the requested paths — the matching rule, not the
+// entry's full scope. When reqPaths is absent we can't compute a match, so we
+// fall back to the entry's full scope.
+function bulletLine(e, reqPaths) {
 	const ep = Array.isArray(e.paths) ? e.paths : [];
-	const where = ep.length ? `  (${ep.join(', ')})` : '';
-	return `- ${e.text}${where}`;
+	if (ep.length === 0) return `- ${e.text}  (global)`;
+	const req = Array.isArray(reqPaths) ? reqPaths.filter(Boolean) : [];
+	const matched = req.length ? ep.filter((g) => req.some((p) => globMatch(g, p))) : [];
+	const shown = matched.length ? matched : ep;
+	return `- ${e.text}  (${shown.join(', ')})`;
 }
 
 // Split entries (in the order given — rank first!) into successive pages, each
@@ -178,8 +186,10 @@ function bulletLine(e) {
 // learning twice — the point of pagination here. A single oversized entry still
 // gets its own page (never silently dropped). `page` is 1-based and clamped into
 // [1, pages]. max ≤ 0 / non-finite ⇒ a single page holding everything.
-// Returns { entries, page, pages, total }.
-export function paginateByBytes(entries, max, page = 1) {
+// Returns { entries, page, pages, total }. `paths` (the requested paths) is used
+// only to size each line exactly as it will render (matching-rule annotation),
+// so the byte budget reflects the real output.
+export function paginateByBytes(entries, max, page = 1, { paths } = {}) {
 	const list = Array.isArray(entries) ? entries : [];
 	const total = list.length;
 	if (total === 0) return { entries: [], page: 1, pages: 0, total: 0 };
@@ -191,7 +201,7 @@ export function paginateByBytes(entries, max, page = 1) {
 		const start = i;
 		let bytes = 0;
 		while (i < total) {
-			const size = Buffer.byteLength(bulletLine(list[i]) + '\n', 'utf8');
+			const size = Buffer.byteLength(bulletLine(list[i], paths) + '\n', 'utf8');
 			if (bytes + size > max && i > start) break; // page full; always keep ≥1
 			bytes += size;
 			i++;
@@ -212,11 +222,12 @@ export function boundByBytes(entries, max) {
 }
 
 // Render entries as a flat bullet list for prompt injection, in the order given
-// (rank order: path-specific first, then newest). Each bullet carries its path
-// scope as a hint. Empty ⇒ "".
-export function renderText(entries) {
+// (rank order: most-specific match first, then newest). Each bullet carries its
+// matching rule (the glob that matched `paths`, or `(global)`) so the consumer
+// can judge relevance. Empty ⇒ "".
+export function renderText(entries, { paths } = {}) {
 	if (!entries || entries.length === 0) return '';
-	return entries.map(bulletLine).join('\n');
+	return entries.map((e) => bulletLine(e, paths)).join('\n');
 }
 
 // --- entry construction ----------------------------------------------------

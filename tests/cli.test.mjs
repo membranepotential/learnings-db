@@ -63,7 +63,28 @@ test('recall --format json emits the matched entries; empty matches → empty ou
 	assert.equal(empty, '');
 });
 
-test('recall paginates: stderr note on page 1, disjoint pages, pure stdout', () => {
+test('recall is unbounded by default: all matched returned, no pagination note', () => {
+	const file = store();
+	for (let i = 0; i < 12; i++) {
+		run(['learn', '--file', file, '--text', `learning number ${i} ` + 'x'.repeat(80), '--paths', 'src/a.ts']);
+	}
+	const r = spawnSync('node', [CLI, 'recall', '--file', file, '--paths', 'src/a.ts'], { encoding: 'utf8' });
+	assert.equal(r.status, 0);
+	assert.equal((r.stdout.match(/^- /gm) || []).length, 12); // every matched bullet, no byte cap
+	assert.equal(r.stderr, ''); // unbounded ⇒ single page ⇒ no note
+});
+
+test('recall annotates the matching rule and labels globals', () => {
+	const file = store();
+	run(['learn', '--file', file, '--text', 'review gotcha', '--paths', 'src/review/**,src/e2e/**']);
+	run(['learn', '--file', file, '--text', 'cross cutting note']); // global
+	const out = run(['recall', '--file', file, '--paths', 'src/review/Thing.tsx']);
+	assert.match(out, /- review gotcha {2}\(src\/review\/\*\*\)/); // only the matched glob
+	assert.doesNotMatch(out, /e2e/); // non-matching glob hidden
+	assert.match(out, /- cross cutting note {2}\(global\)/);
+});
+
+test('recall paginates only when --max-bytes is set: stderr note, disjoint pages, pure stdout', () => {
 	const file = store();
 	for (let i = 0; i < 5; i++) {
 		run(['learn', '--file', file, '--text', `padding learning ${i} ` + 'x'.repeat(100), '--paths', 'src/a.ts']);

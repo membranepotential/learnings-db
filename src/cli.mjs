@@ -28,7 +28,7 @@ const HELP = `learnings — shared recall/learn over a path-scoped NDJSON learni
 
 Usage:
   learnings recall  [--file <learnings.ndjson>] [--paths a,b]
-                    [--max-bytes 8000] [--page 1] [--format text|json]
+                    [--max-bytes N] [--page 1] [--format text|json]
   learnings learn   --text "..." [--file <learnings.ndjson>] [--paths a/**,b.ts]
                     [--issue N] [--pr N] [--date YYYY-MM-DD]
                     [--target-file <abs>] [--allow-dup]
@@ -36,6 +36,8 @@ Usage:
                     [--blame]   # fill candidate paths from each bullet's git history
 
 --file defaults to .learnings.ndjson in the current directory.
+recall is unbounded by default (all matched, ranked most-relevant first); pass a
+positive --max-bytes to bound output into pages and page through with --page.
 
 Run a command with no required flags to see its error, or 'learnings help'.
 `;
@@ -74,7 +76,10 @@ const truncate = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + '
 function cmdRecall(args) {
 	const file = str(args.file) || DEFAULT_STORE;
 	const reqPaths = splitList(args.paths);
-	const maxBytes = args['max-bytes'] != null ? Number(args['max-bytes']) : 8000;
+	// Unbounded by default: issue/planning recall wants every learning that could
+	// apply (high recall, tolerate some noise), not a sharp small page. Pass a
+	// positive --max-bytes to opt into byte-bounded pagination instead.
+	const maxBytes = args['max-bytes'] != null ? Number(args['max-bytes']) : 0;
 	const page = args.page != null ? Number(args.page) : 1;
 	const format = args.format === 'json' ? 'json' : 'text';
 
@@ -88,12 +93,12 @@ function cmdRecall(args) {
 	// One byte-bounded page of whole entries (never a split/truncated learning),
 	// ranked most-relevant first. Pages are disjoint, so an agent that wants more
 	// pages forward (--page 2, 3 …) without re-reading learnings it already saw.
-	const { entries: shown, page: cur, pages, total } = paginateByBytes(matched, maxBytes, page);
+	const { entries: shown, page: cur, pages, total } = paginateByBytes(matched, maxBytes, page, { paths: reqPaths });
 
 	if (format === 'json') {
 		process.stdout.write(JSON.stringify(shown, null, 2) + '\n');
 	} else {
-		const text = renderText(shown);
+		const text = renderText(shown, { paths: reqPaths });
 		if (text) process.stdout.write(text + '\n');
 	}
 
