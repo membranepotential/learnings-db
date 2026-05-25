@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,4 +71,24 @@ test('migrate writes ndjson next to the md, non-destructively', () => {
 	const entries = parseEntries(readFileSync(join(dir, 'svc.ndjson'), 'utf8'));
 	assert.deepEqual(entries[0].paths, ['src/routes/**']);
 	assert.ok(!('phase' in entries[0]) && !('kind' in entries[0])); // dropped from the contract
+});
+
+test('migrate --blame fills candidate paths from the bullet\'s introducing commit', () => {
+	const dir = tmp();
+	const git = (...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8' });
+	git('init', '-q', '-b', 'main');
+	git('config', 'user.email', 't@example.com');
+	git('config', 'user.name', 'Test');
+
+	// One commit that ships a code change AND its learning bullet together — the
+	// compound-with-code pattern blame is meant to exploit.
+	mkdirSync(join(dir, 'src'), { recursive: true });
+	writeFileSync(join(dir, 'src', 'routes.ts'), 'export const routes = [];\n');
+	writeFileSync(join(dir, 'svc.md'), ['# Learnings', '', '- A subtle ordering gotcha with no inline path'].join('\n'));
+	git('add', '-A');
+	git('commit', '-q', '-m', 'feat: routes + learning');
+
+	run(['migrate', '--md', join(dir, 'svc.md'), '--area', 'svc', '--blame', '--out', join(dir, 'svc.ndjson')]);
+	const entries = parseEntries(readFileSync(join(dir, 'svc.ndjson'), 'utf8'));
+	assert.deepEqual(entries[0].paths, ['src/routes.ts']); // blame candidate, .md excluded
 });

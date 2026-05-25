@@ -49,7 +49,9 @@ learnings migrate --md docs/learnings/services-server.md \
 ## Wire-up (per PLAN §6, §10–§11)
 
 1. ✅ Engine (`learnings-core.mjs` + `cli.mjs` recall/learn/migrate) + tests.
-2. ⬜ `migrate` run on the target project's legacy `.md` files + human curation.
+2. ◐ `migrate` (engine ready, incl. `--blame` path-candidate inference); still
+   needs a run on the target project's legacy `.md` files + the agent/human
+   tightening pass that narrows blame candidates to precise globs.
 3. ✅ `/recall` + `/learn` skills.
 4. ✅ `/ce-compound` mirrors each bullet into the store via `learnings learn`
    (additive, alongside its `.md` append + `CLAUDE.md` registry row).

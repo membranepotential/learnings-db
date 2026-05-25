@@ -247,13 +247,16 @@ function cleanBulletText(raw) {
 //   - paths  ← inline backtick paths in the bullet, else `registryPaths`, else []
 //   - date   ← trailing (YYYY-MM-DD) if present, else opts.date
 // Returns { entries, flagged }; `flagged` lists rows whose scoping was inferred
-// (no inline path) for a human curation pass. Non-destructive: reads the
-// markdown, writes nothing.
+// (no inline path) for a human/agent curation pass, each with the 1-based source
+// `line` so callers can `git blame` it for candidate paths. Non-destructive:
+// reads the markdown, writes nothing.
 export function mdBulletsToEntries(md, opts = {}) {
 	const { area = null, registryPaths = [], date: defaultDate = null } = opts;
 	const entries = [];
 	const flagged = [];
-	for (const raw of String(md || '').split('\n')) {
+	const lines = String(md || '').split('\n');
+	for (let i = 0; i < lines.length; i++) {
+		const raw = lines[i];
 		if (/^#{1,6}\s+/.test(raw)) continue; // skip headings
 		if (!/^\s*[-*]\s+/.test(raw)) continue;
 		const text = cleanBulletText(raw);
@@ -273,8 +276,35 @@ export function mdBulletsToEntries(md, opts = {}) {
 		const entry = buildEntry({ text, paths, area, date });
 		entries.push(entry);
 		if (pathSource !== 'inline') {
-			flagged.push({ id: entry.id, text, reason: 'scoping inferred (no inline path)' });
+			flagged.push({ id: entry.id, text, line: i + 1, reason: 'scoping inferred (no inline path)' });
 		}
 	}
 	return { entries, flagged };
+}
+
+// --- blame-assisted path candidates (migrate --blame) ----------------------
+
+// Pure: the commit SHA from `git blame -L n,n --porcelain` output — the first
+// whitespace-delimited token of the first line. Empty input ⇒ null.
+export function parseBlameCommit(porcelain) {
+	if (!porcelain) return null;
+	const first = String(porcelain).split('\n', 1)[0].trim();
+	const sha = first.split(/\s+/)[0];
+	return /^[0-9a-f]{7,40}$/.test(sha) ? sha : null;
+}
+
+// Pure: turn `git show --name-only --pretty=format:` output (one changed path
+// per line) into candidate globs for a learning, dropping blanks and anything
+// matching an `exclude` glob (e.g. the learnings file itself, other docs). These
+// are *candidates* — an agent/human narrows them to the precise globs next.
+export function commitFilesToCandidates(nameOnlyText, { exclude = [] } = {}) {
+	if (!nameOnlyText) return [];
+	const out = [];
+	for (const line of String(nameOnlyText).split('\n')) {
+		const p = line.trim();
+		if (!p) continue;
+		if (exclude.some((g) => globMatch(g, p))) continue;
+		if (!out.includes(p)) out.push(p);
+	}
+	return out;
 }

@@ -90,13 +90,26 @@ is how stray writes are kept out of the wrong checkout.
 learnings migrate --md <area>.md --area services-server
   [--registry CLAUDE.md]    # infer default paths from the path-prefix table
   [--out <area>.ndjson]     # default: alongside the .md
+  [--blame]                 # fill candidate paths from each bullet's git history
 ```
 
 Each bullet → entry: `paths` from inline backtick paths, else the area's
 registry prefix, else `[]`; `date` from a trailing `(YYYY-MM-DD)`. Legacy
 `[planning]`/`[impl]` markers and the trailing date are stripped from `text`.
-Keeps the `.md`. Prints low-confidence rows (no inline path) to stderr for a
-human pass.
+Keeps the `.md`. Prints low-confidence rows (no inline path) to stderr.
+
+**Scoping a migrated learning is two stages** (a bullet rarely names its own
+paths):
+
+1. **`--blame` (deterministic).** For each low-confidence bullet, `git blame` its
+   source line → the commit that introduced it → that commit's changed files
+   (excluding the `.md` and other docs) become candidate `paths`. The
+   compound-with-code convention makes this a strong signal: a learning usually
+   ships in the same commit as the code it's about.
+2. **Agent/human tightening (judgment).** A commit touches more files than the
+   learning is really about. A Claude Code pass (or human) narrows the candidate
+   files to the precise globs and drops the irrelevant ones. This is build-order
+   step 2's curation pass; the candidates are listed on stderr to drive it.
 
 ## Pure functions (`src/learnings-core.mjs`)
 
