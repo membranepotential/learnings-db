@@ -54,14 +54,15 @@ learnings migrate --md docs/learnings/services-server.md
    against the live tree. `--blame` was a dead end there — the `.md` files were
    bulk-reorganised in a docs-only commit, so HEAD-blame yields no code files.
 3. ✅ `/recall` + `/learn` skills.
-4. ✅ `/ce-compound` mirrors each bullet into the store via `learnings learn`
-   (additive, alongside its `.md` append + `CLAUDE.md` registry row).
-   `/ce-plan` + `/ce-review` prefer scoped `recall`, falling back to the registry.
-5. ✅ `/next`: the picker attaches scoped `recalledLearnings` and the compound
-   phase mirrors via `learnings learn --target-dir …`. **Additive + behind
-   `cfg.recall.enabled` (default off)** so the live autopilot is unchanged until
-   a project opts in; the `.next/config.json` label map is retired once parity is
-   confirmed.
+4. ✅ `/ce-compound` records each bullet in the store via `learnings learn` as
+   the **primary** capture (the `.md` append + `CLAUDE.md` registry are now the
+   human-readable mirror / navigation). `/ce-plan` + `/ce-review` prefer scoped
+   `recall`, falling back to the registry.
+5. ✅ `/next`: scoped `recall` is the **primary** learnings source —
+   `cfg.recall.enabled` defaults **on**; the picker attaches `recalledLearnings`
+   and the compound phase records via `learnings learn --target-dir …`. The
+   legacy whole-file label map is retired per-project by setting
+   `learnings.default: null` (done for `scribetech-assistant`).
 
 > The integration edits live in `~/.claude/skills/{next,ce-compound,ce-plan,ce-review}`,
 > which is not a git repo — they are not version-controlled by this project.
