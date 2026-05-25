@@ -1,0 +1,134 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+	normalizeForDedup,
+	entryId,
+	isDuplicate,
+	parseEntries,
+	globMatch,
+	matchEntry,
+	rankEntries,
+	boundByBytes,
+	renderText,
+	buildEntry
+} from '../src/learnings-core.mjs';
+
+test('normalizeForDedup collapses case/punctuation/whitespace', () => {
+	assert.equal(normalizeForDedup('Register   handlers, in routes.ts!'), 'register handlers in routes ts');
+	assert.equal(normalizeForDedup('Foo. Bar'), normalizeForDedup('foo bar'));
+});
+
+test('entryId is stable across cosmetic differences and 12 chars', () => {
+	const a = entryId('Register handlers in routes.ts');
+	const b = entryId('register   handlers, in  routes.ts!!!');
+	assert.equal(a, b);
+	assert.equal(a.length, 12);
+});
+
+test('isDuplicate matches by normalized id', () => {
+	const entries = [buildEntry({ text: 'Always check null', area: 'x', date: '2026-01-01' })];
+	assert.equal(isDuplicate('ALWAYS   check, null', entries), true);
+	assert.equal(isDuplicate('something else', entries), false);
+});
+
+test('parseEntries skips blank and malformed lines', () => {
+	const calls = [];
+	const text = '{"id":"a"}\n\n  \nnot json\n{"id":"b"}\n';
+	const entries = parseEntries(text, { onError: (n, l) => calls.push([n, l]) });
+	assert.deepEqual(entries.map((e) => e.id), ['a', 'b']);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0][0], 4); // line number of the bad line
+});
+
+test('globMatch: * stays within a segment', () => {
+	assert.equal(globMatch('src/*.ts', 'src/a.ts'), true);
+	assert.equal(globMatch('src/*.ts', 'src/sub/a.ts'), false);
+});
+
+test('globMatch: trailing ** crosses segments', () => {
+	assert.equal(globMatch('services/server/src/routes/**', 'services/server/src/routes/a.ts'), true);
+	assert.equal(globMatch('services/server/src/routes/**', 'services/server/src/routes/sub/b.ts'), true);
+	assert.equal(globMatch('services/server/src/routes/**', 'services/server/src/other/b.ts'), false);
+});
+
+test('globMatch: **/ matches zero or more segments', () => {
+	assert.equal(globMatch('a/**/b.ts', 'a/b.ts'), true);
+	assert.equal(globMatch('a/**/b.ts', 'a/x/b.ts'), true);
+	assert.equal(globMatch('a/**/b.ts', 'a/x/y/b.ts'), true);
+	assert.equal(globMatch('a/**/b.ts', 'a/x/c.ts'), false);
+});
+
+test('globMatch: leading ./ is ignored, ? is single char', () => {
+	assert.equal(globMatch('./src/a.ts', 'src/a.ts'), true);
+	assert.equal(globMatch('src/a.ts', './src/a.ts'), true);
+	assert.equal(globMatch('src/?.ts', 'src/a.ts'), true);
+	assert.equal(globMatch('src/?.ts', 'src/ab.ts'), false);
+});
+
+test('matchEntry: area-wide entry ([]) matches regardless of paths', () => {
+	const e = { paths: [], phase: 'both', area: 'svc' };
+	assert.equal(matchEntry(e, {}), true);
+	assert.equal(matchEntry(e, { paths: ['anything.ts'] }), true);
+});
+
+test('matchEntry: path-specific entry needs a path in scope', () => {
+	const e = { paths: ['src/routes/**'], phase: 'both', area: 'svc' };
+	assert.equal(matchEntry(e, {}), false); // no paths in scope
+	assert.equal(matchEntry(e, { paths: ['src/routes/a.ts'] }), true);
+	assert.equal(matchEntry(e, { paths: ['src/other/a.ts'] }), false);
+});
+
+test('matchEntry: phase filter honors "both" and untagged', () => {
+	assert.equal(matchEntry({ paths: [], phase: 'impl' }, { phase: 'planning' }), false);
+	assert.equal(matchEntry({ paths: [], phase: 'both' }, { phase: 'planning' }), true);
+	assert.equal(matchEntry({ paths: [], phase: 'planning' }, { phase: 'planning' }), true);
+	assert.equal(matchEntry({ paths: [] }, { phase: 'planning' }), true); // untagged == both
+});
+
+test('matchEntry: area filter is an exact extra constraint', () => {
+	const e = { paths: [], phase: 'both', area: 'svc' };
+	assert.equal(matchEntry(e, { area: 'svc' }), true);
+	assert.equal(matchEntry(e, { area: 'web' }), false);
+});
+
+test('rankEntries: path-specific before area-wide, then newer first', () => {
+	const areaWideOld = { paths: [], date: '2025-01-01', text: 'aw-old' };
+	const areaWideNew = { paths: [], date: '2026-05-01', text: 'aw-new' };
+	const specificOld = { paths: ['src/a.ts'], date: '2024-01-01', text: 'sp-old' };
+	const specificNew = { paths: ['src/a.ts'], date: '2026-01-01', text: 'sp-new' };
+	const ranked = rankEntries([areaWideOld, specificOld, areaWideNew, specificNew], { paths: ['src/a.ts'] });
+	assert.deepEqual(ranked.map((e) => e.text), ['sp-new', 'sp-old', 'aw-new', 'aw-old']);
+});
+
+test('boundByBytes: respects budget but never returns empty for non-empty input', () => {
+	const entries = [
+		{ text: 'x'.repeat(50), paths: [], area: 'a' },
+		{ text: 'y'.repeat(50), paths: [], area: 'a' },
+		{ text: 'z'.repeat(50), paths: [], area: 'a' }
+	];
+	assert.equal(boundByBytes(entries, 60).length, 1); // only the first fits
+	assert.equal(boundByBytes(entries, 1).length, 1); // oversized first still returned
+	assert.equal(boundByBytes(entries, 100000).length, 3); // generous budget keeps all
+	assert.equal(boundByBytes([], 100).length, 0);
+});
+
+test('renderText: groups by area with phase tag and path hint', () => {
+	const out = renderText([
+		{ text: 'cold start fails', paths: ['src/routes/**'], phase: 'impl', area: 'svc' },
+		{ text: 'plan for migrations', paths: [], phase: 'planning', area: 'svc' }
+	]);
+	assert.match(out, /## svc/);
+	assert.match(out, /- \[impl\] cold start fails {2}\(src\/routes\/\*\*\)/);
+	assert.match(out, /- \[planning\] plan for migrations/);
+});
+
+test('buildEntry: defaults, provenance, and derived id', () => {
+	const e = buildEntry({ text: '  trim me  ', area: 'svc', issue: '477', pr: '485', date: '2026-05-25' });
+	assert.equal(e.text, 'trim me');
+	assert.equal(e.phase, 'both');
+	assert.equal(e.status, 'active');
+	assert.deepEqual(e.paths, []);
+	assert.deepEqual(e.provenance, { issue: 477, pr: 485 });
+	assert.equal(e.id, entryId('trim me'));
+	assert.throws(() => buildEntry({ text: '   ' }));
+});
