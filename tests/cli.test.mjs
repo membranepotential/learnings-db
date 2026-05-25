@@ -14,7 +14,7 @@ const tmp = () => mkdtempSync(join(tmpdir(), 'learnings-'));
 
 test('learn appends a deduped entry; second identical learn is a no-op', () => {
 	const dir = tmp();
-	const out1 = run(['learn', '--dir', dir, '--area', 'svc', '--text', 'Cold start fails', '--paths', 'src/routes/**', '--phase', 'impl']);
+	const out1 = run(['learn', '--dir', dir, '--area', 'svc', '--text', 'Cold start fails', '--paths', 'src/routes/**']);
 	assert.match(out1, /^added [0-9a-f]{12}\n$/);
 
 	const out2 = run(['learn', '--dir', dir, '--area', 'svc', '--text', 'cold  start, FAILS!']);
@@ -22,7 +22,6 @@ test('learn appends a deduped entry; second identical learn is a no-op', () => {
 
 	const lines = parseEntries(readFileSync(join(dir, 'svc.ndjson'), 'utf8'));
 	assert.equal(lines.length, 1);
-	assert.equal(lines[0].phase, 'impl');
 	assert.deepEqual(lines[0].paths, ['src/routes/**']);
 });
 
@@ -34,16 +33,16 @@ test('--target-dir overrides --dir for the write (worktree rule)', () => {
 	assert.equal(existsSync(join(b, 'svc.ndjson')), true);
 });
 
-test('recall filters by path + phase and renders grouped bullets', () => {
+test('recall filters by path scope and renders grouped bullets', () => {
 	const dir = tmp();
-	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'route gotcha', '--paths', 'src/routes/**', '--phase', 'impl']);
-	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'cross cutting note']); // area-wide, both
-	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'planning only', '--phase', 'planning']);
+	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'route gotcha', '--paths', 'src/routes/**']);
+	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'cross cutting note']); // area-wide
+	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'other area note', '--paths', 'src/other/**']);
 
-	const out = run(['recall', '--dir', dir, '--paths', 'src/routes/a.ts', '--phase', 'impl']);
+	const out = run(['recall', '--dir', dir, '--paths', 'src/routes/a.ts']);
 	assert.match(out, /route gotcha/);
 	assert.match(out, /cross cutting note/); // area-wide always in scope
-	assert.doesNotMatch(out, /planning only/); // wrong phase
+	assert.doesNotMatch(out, /other area note/); // path out of scope
 });
 
 test('recall --format json emits the matched entries; empty matches → empty output, exit 0', () => {
@@ -70,7 +69,6 @@ test('migrate writes ndjson next to the md, non-destructively', () => {
 	assert.match(out, /migrated 1 entry/);
 	assert.equal(existsSync(md), true); // original kept
 	const entries = parseEntries(readFileSync(join(dir, 'svc.ndjson'), 'utf8'));
-	assert.equal(entries[0].kind, 'gotcha');
-	assert.equal(entries[0].phase, 'impl');
 	assert.deepEqual(entries[0].paths, ['src/routes/**']);
+	assert.ok(!('phase' in entries[0]) && !('kind' in entries[0])); // dropped from the contract
 });

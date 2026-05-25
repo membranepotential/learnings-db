@@ -24,18 +24,19 @@ skills/learn/SKILL.md   judgment front door -> learn
 
 ## Use
 
+The `learnings` bin is the stable entry point (a symlink to `src/cli.mjs` on PATH).
+
 ```bash
 # capture a learning (dedupes on normalized text)
-node src/cli.mjs learn --dir docs/learnings --area services-server \
+learnings learn --dir docs/learnings --area services-server \
   --text "Register handlers in routes.ts before the test file (vitest discovery fails cold)." \
-  --paths "services/server/src/routes/**" --phase impl --kind gotcha
+  --paths "services/server/src/routes/**"
 
 # recall what applies to the files you're about to touch
-node src/cli.mjs recall --dir docs/learnings \
-  --paths services/server/src/routes/foo.ts --phase impl
+learnings recall --dir docs/learnings --paths services/server/src/routes/foo.ts
 
 # one-time migrate a legacy <area>.md (non-destructive)
-node src/cli.mjs migrate --md docs/learnings/services-server.md \
+learnings migrate --md docs/learnings/services-server.md \
   --area services-server --registry CLAUDE.md
 ```
 
@@ -47,22 +48,25 @@ node src/cli.mjs migrate --md docs/learnings/services-server.md \
 
 ## Wire-up (per PLAN §6, §10–§11)
 
-This repo delivers **build-order steps 1 and 3** — the engine + tests, and the
-`/recall` + `/learn` skills. The remaining steps touch other projects:
-
 1. ✅ Engine (`learnings-core.mjs` + `cli.mjs` recall/learn/migrate) + tests.
 2. ⬜ `migrate` run on the target project's legacy `.md` files + human curation.
 3. ✅ `/recall` + `/learn` skills.
-4. ⬜ Rewire `/ce-compound` to call `learnings learn …` (keep its `CLAUDE.md`
-   registry row) — low risk.
-5. ⬜ Rewire `/next`: replace `pickLearningsFile` with `recall --paths … --phase …`,
-   call `learn --target-dir <worktree-abs>/docs/learnings …` in the compound phase,
-   retire the `.next/config.json` label map — **additive/flagged first, riskiest, last**.
+4. ✅ `/ce-compound` mirrors each bullet into the store via `learnings learn`
+   (additive, alongside its `.md` append + `CLAUDE.md` registry row).
+   `/ce-plan` + `/ce-review` prefer scoped `recall`, falling back to the registry.
+5. ✅ `/next`: the picker attaches scoped `recalledLearnings` and the compound
+   phase mirrors via `learnings learn --target-dir …`. **Additive + behind
+   `cfg.recall.enabled` (default off)** so the live autopilot is unchanged until
+   a project opts in; the `.next/config.json` label map is retired once parity is
+   confirmed.
 
-To activate the skills, symlink them into `~/.claude/skills` and point consumers
-at the CLI via a stable, configurable path (e.g. a `LEARNINGS_CLI` env var):
+> The integration edits live in `~/.claude/skills/{next,ce-compound,ce-plan,ce-review}`,
+> which is not a git repo — they are not version-controlled by this project.
+
+Activation (already done in this environment):
 
 ```bash
-ln -s "$PWD/skills/recall" ~/.claude/skills/recall
-ln -s "$PWD/skills/learn"  ~/.claude/skills/learn
+ln -sfn "$PWD/skills/recall" ~/.claude/skills/recall   # /recall skill
+ln -sfn "$PWD/skills/learn"  ~/.claude/skills/learn    # /learn skill
+ln -sfn "$PWD/src/cli.mjs"   ~/.local/bin/learnings    # `learnings` on PATH
 ```

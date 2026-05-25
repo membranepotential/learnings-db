@@ -66,27 +66,20 @@ test('globMatch: leading ./ is ignored, ? is single char', () => {
 });
 
 test('matchEntry: area-wide entry ([]) matches regardless of paths', () => {
-	const e = { paths: [], phase: 'both', area: 'svc' };
+	const e = { paths: [], area: 'svc' };
 	assert.equal(matchEntry(e, {}), true);
 	assert.equal(matchEntry(e, { paths: ['anything.ts'] }), true);
 });
 
 test('matchEntry: path-specific entry needs a path in scope', () => {
-	const e = { paths: ['src/routes/**'], phase: 'both', area: 'svc' };
+	const e = { paths: ['src/routes/**'], area: 'svc' };
 	assert.equal(matchEntry(e, {}), false); // no paths in scope
 	assert.equal(matchEntry(e, { paths: ['src/routes/a.ts'] }), true);
 	assert.equal(matchEntry(e, { paths: ['src/other/a.ts'] }), false);
 });
 
-test('matchEntry: phase filter honors "both" and untagged', () => {
-	assert.equal(matchEntry({ paths: [], phase: 'impl' }, { phase: 'planning' }), false);
-	assert.equal(matchEntry({ paths: [], phase: 'both' }, { phase: 'planning' }), true);
-	assert.equal(matchEntry({ paths: [], phase: 'planning' }, { phase: 'planning' }), true);
-	assert.equal(matchEntry({ paths: [] }, { phase: 'planning' }), true); // untagged == both
-});
-
 test('matchEntry: area filter is an exact extra constraint', () => {
-	const e = { paths: [], phase: 'both', area: 'svc' };
+	const e = { paths: [], area: 'svc' };
 	assert.equal(matchEntry(e, { area: 'svc' }), true);
 	assert.equal(matchEntry(e, { area: 'web' }), false);
 });
@@ -112,23 +105,23 @@ test('boundByBytes: respects budget but never returns empty for non-empty input'
 	assert.equal(boundByBytes([], 100).length, 0);
 });
 
-test('renderText: groups by area with phase tag and path hint', () => {
+test('renderText: groups by area with path hint', () => {
 	const out = renderText([
-		{ text: 'cold start fails', paths: ['src/routes/**'], phase: 'impl', area: 'svc' },
-		{ text: 'plan for migrations', paths: [], phase: 'planning', area: 'svc' }
+		{ text: 'cold start fails', paths: ['src/routes/**'], area: 'svc' },
+		{ text: 'plan for migrations', paths: [], area: 'svc' }
 	]);
 	assert.match(out, /## svc/);
-	assert.match(out, /- \[impl\] cold start fails {2}\(src\/routes\/\*\*\)/);
-	assert.match(out, /- \[planning\] plan for migrations/);
+	assert.match(out, /- cold start fails {2}\(src\/routes\/\*\*\)/);
+	assert.match(out, /- plan for migrations/);
 });
 
-test('buildEntry: defaults, provenance, and derived id', () => {
+test('buildEntry: defaults, provenance, derived id, and no phase/kind', () => {
 	const e = buildEntry({ text: '  trim me  ', area: 'svc', issue: '477', pr: '485', date: '2026-05-25' });
 	assert.equal(e.text, 'trim me');
-	assert.equal(e.phase, 'both');
 	assert.equal(e.status, 'active');
 	assert.deepEqual(e.paths, []);
 	assert.deepEqual(e.provenance, { issue: 477, pr: 485 });
 	assert.equal(e.id, entryId('trim me'));
+	assert.ok(!('phase' in e) && !('kind' in e), 'phase/kind are not part of the schema');
 	assert.throws(() => buildEntry({ text: '   ' }));
 });

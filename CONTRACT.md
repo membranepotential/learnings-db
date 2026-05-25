@@ -21,9 +21,7 @@ same commit. Derived from §3–§4 of `learnings-recall-learn-PLAN.md`.
   "id": "sha1(normalizeForDedup(text))[:12]",
   "text": "Register handlers in routes.ts before the test file (vitest discovery fails cold).",
   "paths": ["services/server/src/routes/**"],
-  "phase": "impl",
   "area": "services-server",
-  "kind": "gotcha",
   "provenance": { "issue": 477, "pr": 485 },
   "date": "2026-05-25",
   "status": "active"
@@ -35,41 +33,46 @@ same commit. Derived from §3–§4 of `learnings-recall-learn-PLAN.md`.
 | `id`         | string (12 hex)                            | stable hash of normalized `text` → dedup + idempotent upsert. |
 | `text`       | string                                     | the learning. |
 | `paths`      | glob[]                                     | **`[]` = applies to the whole `area`** (cross-cutting). |
-| `phase`      | `"planning" \| "impl" \| "both"`           | untagged ⇒ `both`. |
 | `area`       | string                                     | opaque project-config string. |
-| `kind`       | `"gotcha" \| "pattern" \| "decision" \| null` | optional human bucket; not used for retrieval. |
 | `provenance` | `{ issue?: number, pr?: number }`          | traceability. |
 | `date`       | `YYYY-MM-DD`                               | traceability + recency ranking. |
 | `status`     | `"active" \| "deprecated"`                 | soft-delete; recall ignores non-active. |
 
+**Not in the contract:** there is deliberately no `phase` or `kind` field. Both
+asked the *writer* to predict the *reader's* role/bucket — the same
+predict-the-consumer coupling (§1) this system exists to remove. Scoping is
+derived, not predicted: by `paths` (from data the agent already has, e.g.
+`target_files`) and recency. `kind` was also never used for retrieval. A
+consumer that still wants a planning/impl split can layer it as its own
+convention; the shared store stays minimal.
+
 ## CLI (Layer 2)
 
-Project-agnostic; every command takes `--dir <learnings-dir>`. Stable invocation
-path: `node <this-project>/src/cli.mjs <command> …` (make it configurable in
-consumers via e.g. a `LEARNINGS_CLI` setting).
+Project-agnostic; every command takes `--dir <learnings-dir>`. The stable
+invocation is the `learnings` bin on `PATH` (a symlink to this project's
+`src/cli.mjs`). Consumers call `learnings <command> …`.
 
 ### `recall`
 
 ```
-node src/cli.mjs recall --dir <d>
+learnings recall --dir <d>
   [--paths a/b.ts,c/d.ts]   # files in scope (e.g. plan target_files); omit = area-wide only
-  [--phase planning|impl]   # omit = all phases
   [--area services-server]  # optional extra filter
   [--max-bytes 4000]        # token budget (default 4000)
   [--format text|json]      # text = grouped bullets (default); json = raw entries
 ```
 
-Behavior: read all `*.ndjson`; keep `status=active`; phase filter
-(`entry.phase==req || entry.phase=="both"` or untagged); path filter (any
-`entry.paths` glob matches any `--paths`, OR `entry.paths==[]`); **rank**
-path-specific > area-wide, then newer > older; **bound** to `--max-bytes`; emit.
-**Exit 0 with empty output when nothing matches** — callers must tolerate empty.
+Behavior: read all `*.ndjson`; keep `status=active`; path filter (any
+`entry.paths` glob matches any `--paths`, OR `entry.paths==[]`); optional `area`
+filter; **rank** path-specific > area-wide, then newer > older; **bound** to
+`--max-bytes`; emit. **Exit 0 with empty output when nothing matches** — callers
+must tolerate empty.
 
 ### `learn`
 
 ```
-node src/cli.mjs learn --dir <d> --area services-server --text "..."
-  [--paths a/**,b.ts] [--phase impl] [--kind gotcha]
+learnings learn --dir <d> --area services-server --text "..."
+  [--paths a/**,b.ts]
   [--issue N] [--pr N] [--date YYYY-MM-DD]
   [--target-dir <abs>]      # OVERRIDES --dir for the write (worktree rule)
   [--allow-dup]             # default: skip if id already present
@@ -84,15 +87,15 @@ is how stray writes are kept out of the wrong checkout.
 ### `migrate` (one-time, best-effort, non-destructive)
 
 ```
-node src/cli.mjs migrate --md <area>.md --area services-server
+learnings migrate --md <area>.md --area services-server
   [--registry CLAUDE.md]    # infer default paths from the path-prefix table
   [--out <area>.ndjson]     # default: alongside the .md
 ```
 
-Each bullet → entry: `phase` from `[planning]`/`[impl]` (else `both`); `paths`
-from inline backtick paths, else the area's registry prefix, else `[]`; `kind`
-from the subsection heading; `date` from a trailing `(YYYY-MM-DD)`. Keeps the
-`.md`. Prints low-confidence rows (no inline path AND no tag) to stderr for a
+Each bullet → entry: `paths` from inline backtick paths, else the area's
+registry prefix, else `[]`; `date` from a trailing `(YYYY-MM-DD)`. Legacy
+`[planning]`/`[impl]` markers and the trailing date are stripped from `text`.
+Keeps the `.md`. Prints low-confidence rows (no inline path) to stderr for a
 human pass.
 
 ## Pure functions (`src/learnings-core.mjs`)

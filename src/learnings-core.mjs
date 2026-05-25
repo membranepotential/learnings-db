@@ -106,12 +106,10 @@ export function globMatch(glob, path) {
 // Does `entry` survive the recall filters? An entry with empty `paths` is
 // "area-wide" (cross-cutting) and matches whenever its area is in scope; a
 // path-specific entry matches only when one of its globs hits a requested path.
-//   - phase: kept when entry.phase === req, entry.phase === "both", or untagged.
 //   - area:  optional extra filter (exact match on entry.area).
 //   - paths: requested files in scope; omit ⇒ only area-wide entries match.
-export function matchEntry(entry, { paths, phase, area } = {}) {
+export function matchEntry(entry, { paths, area } = {}) {
 	if (!entry) return false;
-	if (phase && entry.phase && entry.phase !== phase && entry.phase !== 'both') return false;
 	if (area && entry.area !== area) return false;
 	const entryPaths = Array.isArray(entry.paths) ? entry.paths : [];
 	if (entryPaths.length === 0) return true; // area-wide / cross-cutting
@@ -144,10 +142,9 @@ export function rankEntries(entries, { paths } = {}) {
 // One grouped-bullet line for an entry (the unit of both rendering and byte
 // budgeting, so the budget reflects what is actually emitted).
 function bulletLine(e) {
-	const phaseTag = e.phase && e.phase !== 'both' ? `[${e.phase}] ` : '';
 	const ep = Array.isArray(e.paths) ? e.paths : [];
 	const where = ep.length ? `  (${ep.join(', ')})` : '';
-	return `- ${phaseTag}${e.text}${where}`;
+	return `- ${e.text}${where}`;
 }
 
 // Greedily keep entries (in the order given — rank first!) whose cumulative
@@ -190,9 +187,9 @@ export function renderText(entries) {
 // --- entry construction ----------------------------------------------------
 
 // Build a schema-complete entry from loose fields. `id` is derived from `text`.
-// Missing optionals get their documented defaults (phase "both", status
-// "active", today's date). Throws when `text` is blank.
-export function buildEntry({ text, paths, phase, area, kind, issue, pr, date, status } = {}) {
+// Missing optionals get their documented defaults (status "active", today's
+// date). Throws when `text` is blank.
+export function buildEntry({ text, paths, area, issue, pr, date, status } = {}) {
 	if (!text || !String(text).trim()) throw new Error('buildEntry: text is required');
 	const clean = String(text).trim();
 	const provenance = {};
@@ -202,9 +199,7 @@ export function buildEntry({ text, paths, phase, area, kind, issue, pr, date, st
 		id: entryId(clean),
 		text: clean,
 		paths: Array.isArray(paths) ? paths.filter(Boolean) : [],
-		phase: phase || 'both',
 		area: area || null,
-		kind: kind || null,
 		provenance,
 		date: date || new Date().toISOString().slice(0, 10),
 		status: status || 'active'
@@ -212,24 +207,6 @@ export function buildEntry({ text, paths, phase, area, kind, issue, pr, date, st
 }
 
 // --- migration (.md bullets → entries) -------------------------------------
-
-const KIND_PATTERNS = [
-	[/gotcha/i, 'gotcha'],
-	[/pattern/i, 'pattern'],
-	[/decision/i, 'decision']
-];
-
-function inferKind(heading) {
-	if (!heading) return null;
-	for (const [re, kind] of KIND_PATTERNS) if (re.test(heading)) return kind;
-	return null;
-}
-
-function inferPhase(raw) {
-	if (/\[planning\]/i.test(raw)) return 'planning';
-	if (/\[impl\]/i.test(raw)) return 'impl';
-	return 'both';
-}
 
 function inferDate(raw) {
 	const m = raw.match(/\((\d{4}-\d{2}-\d{2})[^)]*\)\s*$/);
@@ -265,28 +242,22 @@ function cleanBulletText(raw) {
 
 // Best-effort migration of a legacy learnings .md into entries. Each top-level
 // bullet becomes one entry:
-//   - phase  ← [planning]/[impl] tag, else "both"
+//   - text   ← the bullet, with any legacy [planning]/[impl] markers and a
+//              trailing (YYYY-MM-DD) stripped out
 //   - paths  ← inline backtick paths in the bullet, else `registryPaths`, else []
-//   - kind   ← nearest preceding subsection heading (gotcha/pattern/decision)
 //   - date   ← trailing (YYYY-MM-DD) if present, else opts.date
 // Returns { entries, flagged }; `flagged` lists rows whose scoping was inferred
-// (no inline path AND no phase tag) for a human curation pass. Non-destructive:
-// reads the markdown, writes nothing.
+// (no inline path) for a human curation pass. Non-destructive: reads the
+// markdown, writes nothing.
 export function mdBulletsToEntries(md, opts = {}) {
 	const { area = null, registryPaths = [], date: defaultDate = null } = opts;
 	const entries = [];
 	const flagged = [];
-	let heading = null;
 	for (const raw of String(md || '').split('\n')) {
-		const h = raw.match(/^#{1,6}\s+(.*)$/);
-		if (h) {
-			heading = h[1].trim();
-			continue;
-		}
+		if (/^#{1,6}\s+/.test(raw)) continue; // skip headings
 		if (!/^\s*[-*]\s+/.test(raw)) continue;
 		const text = cleanBulletText(raw);
 		if (!text) continue;
-		const phase = inferPhase(raw);
 		const inline = extractInlinePaths(raw);
 		let paths = inline;
 		let pathSource = 'inline';
@@ -299,10 +270,10 @@ export function mdBulletsToEntries(md, opts = {}) {
 			}
 		}
 		const date = inferDate(raw) || defaultDate || undefined;
-		const entry = buildEntry({ text, paths, phase, area, kind: inferKind(heading), date });
+		const entry = buildEntry({ text, paths, area, date });
 		entries.push(entry);
-		if (pathSource !== 'inline' && phase === 'both') {
-			flagged.push({ id: entry.id, text, reason: 'scoping inferred (no inline path, no phase tag)' });
+		if (pathSource !== 'inline') {
+			flagged.push({ id: entry.id, text, reason: 'scoping inferred (no inline path)' });
 		}
 	}
 	return { entries, flagged };

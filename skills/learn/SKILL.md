@@ -1,6 +1,6 @@
 ---
 name: learn
-description: Extract genuine, reusable, non-obvious learnings from recent work and persist each one to the right per-area learnings store, scoped by path and phase. Use before committing — learnings ship with the code that produced them. Trigger on "/learn", "capture learnings", or after finishing a non-trivial change.
+description: Extract genuine, reusable, non-obvious learnings from recent work and persist each one to the right per-area learnings store, scoped by path. Use before committing — learnings ship with the code that produced them. Trigger on "/learn", "capture learnings", or after finishing a non-trivial change.
 allowed_tools: ["Bash", "Read", "Grep"]
 ---
 
@@ -10,7 +10,7 @@ Feed what was learned back into the system so future work is easier. **The skill
 owns judgment; the engine owns persistence.** For each learning you formulate,
 you call the engine once — you never hand-edit a learnings file.
 
-The engine lives at `$LEARNINGS_CLI` (default `node ~/Documents/learnings-db/src/cli.mjs`).
+The engine is the `learnings` CLI on PATH.
 
 ## 1. Identify genuine learnings
 
@@ -34,22 +34,17 @@ the code, the docs, or a quick read of the area. One crisp sentence each.
 - **paths** — the glob(s) it applies to (`services/server/src/routes/**`). Use the
   files the work touched. **Omit / leave empty only for genuinely cross-cutting
   learnings** that apply to the whole area.
-- **phase** — `planning` (shapes how you'd plan), `impl` (a coding gotcha/pattern),
-  or omit for `both`.
-- **kind** — optional: `gotcha | pattern | decision`.
 
 ## 3. Persist each learning
 
 One call per learning. Dedup is automatic (idempotent on normalized text):
 
 ```bash
-"${LEARNINGS_CLI:-node ~/Documents/learnings-db/src/cli.mjs}" learn \
+learnings learn \
   --dir docs/learnings \
   --area <area> \
   --text "<one-sentence learning>" \
   --paths <glob[,glob]> \
-  --phase <impl|planning> \
-  --kind <gotcha|pattern|decision> \
   [--issue N] [--pr N]
 ```
 

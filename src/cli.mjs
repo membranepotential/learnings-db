@@ -23,11 +23,11 @@ import {
 const HELP = `learnings — shared recall/learn over per-area NDJSON learnings files
 
 Usage:
-  learnings recall  --dir <d> [--paths a,b] [--phase planning|impl] [--area <a>]
+  learnings recall  --dir <d> [--paths a,b] [--area <a>]
                     [--max-bytes 4000] [--format text|json]
   learnings learn   --dir <d> --area <a> --text "..." [--paths a/**,b.ts]
-                    [--phase impl] [--kind gotcha] [--issue N] [--pr N]
-                    [--date YYYY-MM-DD] [--target-dir <abs>] [--allow-dup]
+                    [--issue N] [--pr N] [--date YYYY-MM-DD]
+                    [--target-dir <abs>] [--allow-dup]
   learnings migrate --md <file.md> --area <a> [--registry CLAUDE.md] [--out <f>]
 
 Run a command with no required flags to see its error, or 'learnings help'.
@@ -73,7 +73,6 @@ function cmdRecall(args) {
 	const dir = str(args.dir);
 	if (!dir) fail('recall: --dir <learnings-dir> is required');
 	const reqPaths = splitList(args.paths);
-	const phase = str(args.phase);
 	const area = str(args.area);
 	const maxBytes = args['max-bytes'] != null ? Number(args['max-bytes']) : 4000;
 	const format = args.format === 'json' ? 'json' : 'text';
@@ -84,7 +83,7 @@ function cmdRecall(args) {
 	}
 	let matched = all
 		.filter((e) => (e.status || 'active') === 'active')
-		.filter((e) => matchEntry(e, { paths: reqPaths, phase, area }));
+		.filter((e) => matchEntry(e, { paths: reqPaths, area }));
 	matched = rankEntries(matched, { paths: reqPaths });
 	matched = boundByBytes(matched, maxBytes);
 
@@ -109,9 +108,7 @@ function cmdLearn(args) {
 	const entry = buildEntry({
 		text: args.text,
 		paths: splitList(args.paths),
-		phase: str(args.phase),
 		area,
-		kind: str(args.kind),
 		issue: str(args.issue),
 		pr: str(args.pr),
 		date: str(args.date)
