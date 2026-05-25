@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // learnings CLI — the thin shell over learnings-core.mjs. Three commands:
 //   recall  — read all *.ndjson in --dir, filter/rank/bound, emit bullets|json
-//   learn   — append one deduped entry to <area>.ndjson at the target path
-//   migrate — one-time, best-effort: legacy <area>.md → <area>.ndjson
+//   learn   — append one deduped entry to learnings.ndjson at the target path
+//   migrate — one-time, best-effort: legacy <area>.md → NDJSON
 //
 // Project-agnostic: every command takes --dir <learnings-dir>. All logic lives
 // in learnings-core; this file only does argv parsing and file I/O.
@@ -23,15 +23,15 @@ import {
 	commitFilesToCandidates
 } from './learnings-core.mjs';
 
-const HELP = `learnings — shared recall/learn over per-area NDJSON learnings files
+const HELP = `learnings — shared recall/learn over a path-scoped NDJSON learnings store
 
 Usage:
-  learnings recall  --dir <d> [--paths a,b] [--area <a>]
+  learnings recall  --dir <d> [--paths a,b]
                     [--max-bytes 4000] [--format text|json]
-  learnings learn   --dir <d> --area <a> --text "..." [--paths a/**,b.ts]
+  learnings learn   --dir <d> --text "..." [--paths a/**,b.ts]
                     [--issue N] [--pr N] [--date YYYY-MM-DD]
                     [--target-dir <abs>] [--allow-dup]
-  learnings migrate --md <file.md> --area <a> [--registry CLAUDE.md] [--out <f>]
+  learnings migrate --md <file.md> [--out <f>]
                     [--blame]   # fill candidate paths from each bullet's git history
 
 Run a command with no required flags to see its error, or 'learnings help'.
@@ -61,6 +61,10 @@ function parseArgs(argv) {
 	return args;
 }
 
+// The single store file. recall still scans every *.ndjson in --dir (so legacy
+// per-area files keep working), but writes always land here.
+const STORE_FILE = 'learnings.ndjson';
+
 const str = (v) => (typeof v === 'string' && v ? v : undefined);
 const splitList = (v) => (typeof v === 'string' && v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
 const truncate = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + '…' : String(s));
@@ -77,7 +81,6 @@ function cmdRecall(args) {
 	const dir = str(args.dir);
 	if (!dir) fail('recall: --dir <learnings-dir> is required');
 	const reqPaths = splitList(args.paths);
-	const area = str(args.area);
 	const maxBytes = args['max-bytes'] != null ? Number(args['max-bytes']) : 4000;
 	const format = args.format === 'json' ? 'json' : 'text';
 
@@ -87,7 +90,7 @@ function cmdRecall(args) {
 	}
 	let matched = all
 		.filter((e) => (e.status || 'active') === 'active')
-		.filter((e) => matchEntry(e, { paths: reqPaths, area }));
+		.filter((e) => matchEntry(e, { paths: reqPaths }));
 	matched = rankEntries(matched, { paths: reqPaths });
 	matched = boundByBytes(matched, maxBytes);
 
@@ -101,8 +104,6 @@ function cmdRecall(args) {
 }
 
 function cmdLearn(args) {
-	const area = str(args.area);
-	if (!area) fail('learn: --area is required');
 	if (!str(args.text)) fail('learn: --text is required');
 	// The --target-dir worktree rule: always write to the explicit target path,
 	// overriding --dir, so a relative-path write can't strand in the wrong checkout.
@@ -112,13 +113,12 @@ function cmdLearn(args) {
 	const entry = buildEntry({
 		text: args.text,
 		paths: splitList(args.paths),
-		area,
 		issue: str(args.issue),
 		pr: str(args.pr),
 		date: str(args.date)
 	});
 
-	const file = join(targetDir, `${area}.ndjson`);
+	const file = join(targetDir, STORE_FILE);
 	const existing = existsSync(file) ? parseEntries(readFileSync(file, 'utf8')) : [];
 	if (!args['allow-dup'] && isDuplicate(entry.text, existing)) {
 		process.stdout.write(`duplicate ${entry.id}\n`);
@@ -129,36 +129,15 @@ function cmdLearn(args) {
 	process.stdout.write(`added ${entry.id}\n`);
 }
 
-// Best-effort: pull path-like backtick tokens from any CLAUDE.md line that names
-// the area, so migration can default a bullet's `paths` to the area's prefix.
-function inferRegistryPaths(text, area) {
-	const out = [];
-	for (const line of text.split('\n')) {
-		if (!line.includes(area)) continue;
-		for (const m of line.match(/`([^`]+)`/g) || []) {
-			const t = m.replace(/`/g, '').trim();
-			if (t !== area && (t.includes('/') || t.includes('**'))) {
-				out.push(t.endsWith('/') ? t + '**' : t);
-			}
-		}
-	}
-	return [...new Set(out)];
-}
-
 function cmdMigrate(args) {
 	const mdPath = str(args.md);
-	const area = str(args.area);
 	if (!mdPath) fail('migrate: --md <file.md> is required');
-	if (!area) fail('migrate: --area is required');
 	if (!existsSync(mdPath)) fail(`migrate: file not found: ${mdPath}`);
 
-	const registryPaths =
-		str(args.registry) && existsSync(args.registry)
-			? inferRegistryPaths(readFileSync(args.registry, 'utf8'), area)
-			: [];
-
-	const out = str(args.out) || join(dirname(mdPath), `${area}.ndjson`);
-	const { entries, flagged } = mdBulletsToEntries(readFileSync(mdPath, 'utf8'), { area, registryPaths });
+	// Default output is named after the .md so migrating several files into one
+	// dir doesn't silently overwrite; combine into learnings.ndjson downstream.
+	const out = str(args.out) || join(dirname(mdPath), `${basename(mdPath, '.md')}.ndjson`);
+	const { entries, flagged } = mdBulletsToEntries(readFileSync(mdPath, 'utf8'));
 
 	// --blame: for each low-confidence row, blame its source line to find the
 	// commit that introduced the bullet, then take that commit's changed files as

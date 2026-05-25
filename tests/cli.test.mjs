@@ -14,13 +14,13 @@ const tmp = () => mkdtempSync(join(tmpdir(), 'learnings-'));
 
 test('learn appends a deduped entry; second identical learn is a no-op', () => {
 	const dir = tmp();
-	const out1 = run(['learn', '--dir', dir, '--area', 'svc', '--text', 'Cold start fails', '--paths', 'src/routes/**']);
+	const out1 = run(['learn', '--dir', dir, '--text', 'Cold start fails', '--paths', 'src/routes/**']);
 	assert.match(out1, /^added [0-9a-f]{12}\n$/);
 
-	const out2 = run(['learn', '--dir', dir, '--area', 'svc', '--text', 'cold  start, FAILS!']);
+	const out2 = run(['learn', '--dir', dir, '--text', 'cold  start, FAILS!']);
 	assert.match(out2, /^duplicate [0-9a-f]{12}\n$/);
 
-	const lines = parseEntries(readFileSync(join(dir, 'svc.ndjson'), 'utf8'));
+	const lines = parseEntries(readFileSync(join(dir, 'learnings.ndjson'), 'utf8'));
 	assert.equal(lines.length, 1);
 	assert.deepEqual(lines[0].paths, ['src/routes/**']);
 });
@@ -28,26 +28,26 @@ test('learn appends a deduped entry; second identical learn is a no-op', () => {
 test('--target-dir overrides --dir for the write (worktree rule)', () => {
 	const a = tmp();
 	const b = tmp();
-	run(['learn', '--dir', a, '--target-dir', b, '--area', 'svc', '--text', 'goes to b']);
-	assert.equal(existsSync(join(a, 'svc.ndjson')), false);
-	assert.equal(existsSync(join(b, 'svc.ndjson')), true);
+	run(['learn', '--dir', a, '--target-dir', b, '--text', 'goes to b']);
+	assert.equal(existsSync(join(a, 'learnings.ndjson')), false);
+	assert.equal(existsSync(join(b, 'learnings.ndjson')), true);
 });
 
-test('recall filters by path scope and renders grouped bullets', () => {
+test('recall filters by path scope and renders bullets', () => {
 	const dir = tmp();
-	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'route gotcha', '--paths', 'src/routes/**']);
-	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'cross cutting note']); // area-wide
-	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'other area note', '--paths', 'src/other/**']);
+	run(['learn', '--dir', dir, '--text', 'route gotcha', '--paths', 'src/routes/**']);
+	run(['learn', '--dir', dir, '--text', 'cross cutting note']); // global ([])
+	run(['learn', '--dir', dir, '--text', 'other area note', '--paths', 'src/other/**']);
 
 	const out = run(['recall', '--dir', dir, '--paths', 'src/routes/a.ts']);
 	assert.match(out, /route gotcha/);
-	assert.match(out, /cross cutting note/); // area-wide always in scope
+	assert.match(out, /cross cutting note/); // global always in scope
 	assert.doesNotMatch(out, /other area note/); // path out of scope
 });
 
 test('recall --format json emits the matched entries; empty matches → empty output, exit 0', () => {
 	const dir = tmp();
-	run(['learn', '--dir', dir, '--area', 'svc', '--text', 'a note', '--paths', 'src/a.ts']);
+	run(['learn', '--dir', dir, '--text', 'a note', '--paths', 'src/a.ts']);
 	const json = JSON.parse(run(['recall', '--dir', dir, '--paths', 'src/a.ts', '--format', 'json']));
 	assert.equal(json.length, 1);
 	assert.equal(json[0].text, 'a note');
@@ -65,12 +65,12 @@ test('migrate writes ndjson next to the md, non-destructively', () => {
 	const dir = tmp();
 	const md = join(dir, 'svc.md');
 	writeFileSync(md, ['## Gotchas', '- **[impl]** Register handlers in `src/routes/**`'].join('\n'));
-	const out = run(['migrate', '--md', md, '--area', 'svc']);
+	const out = run(['migrate', '--md', md]);
 	assert.match(out, /migrated 1 entry/);
 	assert.equal(existsSync(md), true); // original kept
 	const entries = parseEntries(readFileSync(join(dir, 'svc.ndjson'), 'utf8'));
 	assert.deepEqual(entries[0].paths, ['src/routes/**']);
-	assert.ok(!('phase' in entries[0]) && !('kind' in entries[0])); // dropped from the contract
+	assert.ok(!('phase' in entries[0]) && !('kind' in entries[0]) && !('area' in entries[0])); // dropped from the contract
 });
 
 test('migrate --blame fills candidate paths from the bullet\'s introducing commit', () => {
@@ -88,7 +88,7 @@ test('migrate --blame fills candidate paths from the bullet\'s introducing commi
 	git('add', '-A');
 	git('commit', '-q', '-m', 'feat: routes + learning');
 
-	run(['migrate', '--md', join(dir, 'svc.md'), '--area', 'svc', '--blame', '--out', join(dir, 'svc.ndjson')]);
+	run(['migrate', '--md', join(dir, 'svc.md'), '--blame', '--out', join(dir, 'svc.ndjson')]);
 	const entries = parseEntries(readFileSync(join(dir, 'svc.ndjson'), 'utf8'));
 	assert.deepEqual(entries[0].paths, ['src/routes.ts']); // blame candidate, .md excluded
 });

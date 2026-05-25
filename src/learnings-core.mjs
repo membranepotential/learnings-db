@@ -104,15 +104,13 @@ export function globMatch(glob, path) {
 // --- filtering / ranking / bounding ---------------------------------------
 
 // Does `entry` survive the recall filters? An entry with empty `paths` is
-// "area-wide" (cross-cutting) and matches whenever its area is in scope; a
-// path-specific entry matches only when one of its globs hits a requested path.
-//   - area:  optional extra filter (exact match on entry.area).
-//   - paths: requested files in scope; omit ⇒ only area-wide entries match.
-export function matchEntry(entry, { paths, area } = {}) {
+// "global" (cross-cutting) and matches every recall; a path-specific entry
+// matches only when one of its globs hits a requested path.
+//   - paths: requested files in scope; omit ⇒ only global ([]) entries match.
+export function matchEntry(entry, { paths } = {}) {
 	if (!entry) return false;
-	if (area && entry.area !== area) return false;
 	const entryPaths = Array.isArray(entry.paths) ? entry.paths : [];
-	if (entryPaths.length === 0) return true; // area-wide / cross-cutting
+	if (entryPaths.length === 0) return true; // global / cross-cutting
 	const reqPaths = Array.isArray(paths) ? paths.filter(Boolean) : [];
 	if (reqPaths.length === 0) return false; // path-specific entry, nothing in scope
 	return entryPaths.some((g) => reqPaths.some((p) => globMatch(g, p)));
@@ -124,7 +122,7 @@ function isPathSpecificMatch(entry, reqPaths) {
 	return ep.length > 0 && reqPaths.some((p) => ep.some((g) => globMatch(g, p)));
 }
 
-// Rank: path-specific matches before area-wide; within a tier, newer date
+// Rank: path-specific matches before global ([]); within a tier, newer date
 // first. Stable (preserves input order for fully-tied entries). Non-mutating.
 export function rankEntries(entries, { paths } = {}) {
 	const reqPaths = Array.isArray(paths) ? paths.filter(Boolean) : [];
@@ -165,23 +163,12 @@ export function boundByBytes(entries, max) {
 	return out;
 }
 
-// Render entries as grouped bullets for prompt injection — one "## <area>"
-// header per area, bullets in the order given (rank order). Empty ⇒ "".
+// Render entries as a flat bullet list for prompt injection, in the order given
+// (rank order: path-specific first, then newest). Each bullet carries its path
+// scope as a hint. Empty ⇒ "".
 export function renderText(entries) {
 	if (!entries || entries.length === 0) return '';
-	const byArea = new Map();
-	for (const e of entries) {
-		const a = e.area || '(unknown)';
-		if (!byArea.has(a)) byArea.set(a, []);
-		byArea.get(a).push(e);
-	}
-	const blocks = [];
-	for (const [area, list] of byArea) {
-		const lines = [`## ${area}`];
-		for (const e of list) lines.push(bulletLine(e));
-		blocks.push(lines.join('\n'));
-	}
-	return blocks.join('\n\n');
+	return entries.map(bulletLine).join('\n');
 }
 
 // --- entry construction ----------------------------------------------------
@@ -189,7 +176,7 @@ export function renderText(entries) {
 // Build a schema-complete entry from loose fields. `id` is derived from `text`.
 // Missing optionals get their documented defaults (status "active", today's
 // date). Throws when `text` is blank.
-export function buildEntry({ text, paths, area, issue, pr, date, status } = {}) {
+export function buildEntry({ text, paths, issue, pr, date, status } = {}) {
 	if (!text || !String(text).trim()) throw new Error('buildEntry: text is required');
 	const clean = String(text).trim();
 	const provenance = {};
@@ -199,7 +186,6 @@ export function buildEntry({ text, paths, area, issue, pr, date, status } = {}) 
 		id: entryId(clean),
 		text: clean,
 		paths: Array.isArray(paths) ? paths.filter(Boolean) : [],
-		area: area || null,
 		provenance,
 		date: date || new Date().toISOString().slice(0, 10),
 		status: status || 'active'
@@ -244,14 +230,14 @@ function cleanBulletText(raw) {
 // bullet becomes one entry:
 //   - text   ← the bullet, with any legacy [planning]/[impl] markers and a
 //              trailing (YYYY-MM-DD) stripped out
-//   - paths  ← inline backtick paths in the bullet, else `registryPaths`, else []
+//   - paths  ← inline backtick paths in the bullet, else [] (global)
 //   - date   ← trailing (YYYY-MM-DD) if present, else opts.date
-// Returns { entries, flagged }; `flagged` lists rows whose scoping was inferred
-// (no inline path) for a human/agent curation pass, each with the 1-based source
-// `line` so callers can `git blame` it for candidate paths. Non-destructive:
-// reads the markdown, writes nothing.
+// Returns { entries, flagged }; `flagged` lists rows with no inline path (left
+// global) for a human/agent curation pass, each with the 1-based source `line`
+// so callers can `git blame` it for candidate paths. Non-destructive: reads the
+// markdown, writes nothing.
 export function mdBulletsToEntries(md, opts = {}) {
-	const { area = null, registryPaths = [], date: defaultDate = null } = opts;
+	const { date: defaultDate = null } = opts;
 	const entries = [];
 	const flagged = [];
 	const lines = String(md || '').split('\n');
@@ -261,22 +247,12 @@ export function mdBulletsToEntries(md, opts = {}) {
 		if (!/^\s*[-*]\s+/.test(raw)) continue;
 		const text = cleanBulletText(raw);
 		if (!text) continue;
-		const inline = extractInlinePaths(raw);
-		let paths = inline;
-		let pathSource = 'inline';
-		if (paths.length === 0) {
-			if (registryPaths && registryPaths.length) {
-				paths = [...registryPaths];
-				pathSource = 'registry';
-			} else {
-				pathSource = 'none';
-			}
-		}
+		const paths = extractInlinePaths(raw);
 		const date = inferDate(raw) || defaultDate || undefined;
-		const entry = buildEntry({ text, paths, area, date });
+		const entry = buildEntry({ text, paths, date });
 		entries.push(entry);
-		if (pathSource !== 'inline') {
-			flagged.push({ id: entry.id, text, line: i + 1, reason: 'scoping inferred (no inline path)' });
+		if (paths.length === 0) {
+			flagged.push({ id: entry.id, text, line: i + 1, reason: 'no inline path (left global)' });
 		}
 	}
 	return { entries, flagged };

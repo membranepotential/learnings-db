@@ -1,6 +1,6 @@
 ---
 name: learn
-description: Extract genuine, reusable, non-obvious learnings from recent work and persist each one to the right per-area learnings store, scoped by path. Use before committing — learnings ship with the code that produced them. Trigger on "/learn", "capture learnings", or after finishing a non-trivial change.
+description: Extract genuine, reusable, non-obvious learnings from recent work and persist each one to the shared learnings store, scoped by path. Use before committing — learnings ship with the code that produced them. Trigger on "/learn", "capture learnings", or after finishing a non-trivial change.
 allowed_tools: ["Bash", "Read", "Grep"]
 ---
 
@@ -29,11 +29,11 @@ the code, the docs, or a quick read of the area. One crisp sentence each.
 
 ## 2. Scope each learning
 
-- **area** — the smallest area it belongs to (matches the project's per-area
-  learnings + the `CLAUDE.md` path-prefix registry). Pick one.
 - **paths** — the glob(s) it applies to (`services/server/src/routes/**`). Use the
-  files the work touched. **Omit / leave empty only for genuinely cross-cutting
-  learnings** that apply to the whole area.
+  files the work touched; keep them as tight as the learning warrants. `paths` is
+  the **only** scoping axis, so precise globs are what make recall useful. **Leave
+  empty (`[]`) only for genuinely cross-cutting learnings** that should surface on
+  every recall regardless of path.
 
 ## 3. Persist each learning
 
@@ -42,7 +42,6 @@ One call per learning. Dedup is automatic (idempotent on normalized text):
 ```bash
 learnings learn \
   --dir docs/learnings \
-  --area <area> \
   --text "<one-sentence learning>" \
   --paths <glob[,glob]> \
   [--issue N] [--pr N]

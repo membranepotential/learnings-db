@@ -3,7 +3,7 @@
 One read/write contract over a queryable store of codebase-engineering learnings,
 replacing the two divergent, hand-maintained attribution maps that `/ce-compound`
 and `/next` kept over the same files. Recall returns **only the matching entries**
-(token-bounded), scoped by **path-glob + phase**; writes go through one deduping,
+(token-bounded), scoped by **path-glob + recency**; writes go through one deduping,
 correct-path implementation.
 
 See [`learnings-recall-learn-PLAN.md`](./learnings-recall-learn-PLAN.md) for the
@@ -27,8 +27,8 @@ skills/learn/SKILL.md   judgment front door -> learn
 The `learnings` bin is the stable entry point (a symlink to `src/cli.mjs` on PATH).
 
 ```bash
-# capture a learning (dedupes on normalized text)
-learnings learn --dir docs/learnings --area services-server \
+# capture a learning (dedupes on normalized text) → docs/learnings/learnings.ndjson
+learnings learn --dir docs/learnings \
   --text "Register handlers in routes.ts before the test file (vitest discovery fails cold)." \
   --paths "services/server/src/routes/**"
 
@@ -36,8 +36,7 @@ learnings learn --dir docs/learnings --area services-server \
 learnings recall --dir docs/learnings --paths services/server/src/routes/foo.ts
 
 # one-time migrate a legacy <area>.md (non-destructive)
-learnings migrate --md docs/learnings/services-server.md \
-  --area services-server --registry CLAUDE.md
+learnings migrate --md docs/learnings/services-server.md
 ```
 
 ## Test
@@ -49,9 +48,11 @@ learnings migrate --md docs/learnings/services-server.md \
 ## Wire-up (per PLAN §6, §10–§11)
 
 1. ✅ Engine (`learnings-core.mjs` + `cli.mjs` recall/learn/migrate) + tests.
-2. ◐ `migrate` (engine ready, incl. `--blame` path-candidate inference); still
-   needs a run on the target project's legacy `.md` files + the agent/human
-   tightening pass that narrows blame candidates to precise globs.
+2. ✅ `migrate` run on `scribetech-assistant` (11 legacy `<area>.md`, 881 bullets →
+   one `learnings.ndjson`). Paths were repo-rooted + tightened in a curation pass
+   (deterministic safe-repair, then subtree subagents); every glob is validated
+   against the live tree. `--blame` was a dead end there — the `.md` files were
+   bulk-reorganised in a docs-only commit, so HEAD-blame yields no code files.
 3. ✅ `/recall` + `/learn` skills.
 4. ✅ `/ce-compound` mirrors each bullet into the store via `learnings learn`
    (additive, alongside its `.md` append + `CLAUDE.md` registry row).

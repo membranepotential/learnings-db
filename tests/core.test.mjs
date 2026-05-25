@@ -26,7 +26,7 @@ test('entryId is stable across cosmetic differences and 12 chars', () => {
 });
 
 test('isDuplicate matches by normalized id', () => {
-	const entries = [buildEntry({ text: 'Always check null', area: 'x', date: '2026-01-01' })];
+	const entries = [buildEntry({ text: 'Always check null', date: '2026-01-01' })];
 	assert.equal(isDuplicate('ALWAYS   check, null', entries), true);
 	assert.equal(isDuplicate('something else', entries), false);
 });
@@ -65,39 +65,33 @@ test('globMatch: leading ./ is ignored, ? is single char', () => {
 	assert.equal(globMatch('src/?.ts', 'src/ab.ts'), false);
 });
 
-test('matchEntry: area-wide entry ([]) matches regardless of paths', () => {
-	const e = { paths: [], area: 'svc' };
+test('matchEntry: global entry ([]) matches regardless of paths', () => {
+	const e = { paths: [] };
 	assert.equal(matchEntry(e, {}), true);
 	assert.equal(matchEntry(e, { paths: ['anything.ts'] }), true);
 });
 
 test('matchEntry: path-specific entry needs a path in scope', () => {
-	const e = { paths: ['src/routes/**'], area: 'svc' };
+	const e = { paths: ['src/routes/**'] };
 	assert.equal(matchEntry(e, {}), false); // no paths in scope
 	assert.equal(matchEntry(e, { paths: ['src/routes/a.ts'] }), true);
 	assert.equal(matchEntry(e, { paths: ['src/other/a.ts'] }), false);
 });
 
-test('matchEntry: area filter is an exact extra constraint', () => {
-	const e = { paths: [], area: 'svc' };
-	assert.equal(matchEntry(e, { area: 'svc' }), true);
-	assert.equal(matchEntry(e, { area: 'web' }), false);
-});
-
-test('rankEntries: path-specific before area-wide, then newer first', () => {
-	const areaWideOld = { paths: [], date: '2025-01-01', text: 'aw-old' };
-	const areaWideNew = { paths: [], date: '2026-05-01', text: 'aw-new' };
+test('rankEntries: path-specific before global ([]), then newer first', () => {
+	const globalOld = { paths: [], date: '2025-01-01', text: 'g-old' };
+	const globalNew = { paths: [], date: '2026-05-01', text: 'g-new' };
 	const specificOld = { paths: ['src/a.ts'], date: '2024-01-01', text: 'sp-old' };
 	const specificNew = { paths: ['src/a.ts'], date: '2026-01-01', text: 'sp-new' };
-	const ranked = rankEntries([areaWideOld, specificOld, areaWideNew, specificNew], { paths: ['src/a.ts'] });
-	assert.deepEqual(ranked.map((e) => e.text), ['sp-new', 'sp-old', 'aw-new', 'aw-old']);
+	const ranked = rankEntries([globalOld, specificOld, globalNew, specificNew], { paths: ['src/a.ts'] });
+	assert.deepEqual(ranked.map((e) => e.text), ['sp-new', 'sp-old', 'g-new', 'g-old']);
 });
 
 test('boundByBytes: respects budget but never returns empty for non-empty input', () => {
 	const entries = [
-		{ text: 'x'.repeat(50), paths: [], area: 'a' },
-		{ text: 'y'.repeat(50), paths: [], area: 'a' },
-		{ text: 'z'.repeat(50), paths: [], area: 'a' }
+		{ text: 'x'.repeat(50), paths: [] },
+		{ text: 'y'.repeat(50), paths: [] },
+		{ text: 'z'.repeat(50), paths: [] }
 	];
 	assert.equal(boundByBytes(entries, 60).length, 1); // only the first fits
 	assert.equal(boundByBytes(entries, 1).length, 1); // oversized first still returned
@@ -105,23 +99,23 @@ test('boundByBytes: respects budget but never returns empty for non-empty input'
 	assert.equal(boundByBytes([], 100).length, 0);
 });
 
-test('renderText: groups by area with path hint', () => {
+test('renderText: flat bullets with a path hint, in input order', () => {
 	const out = renderText([
-		{ text: 'cold start fails', paths: ['src/routes/**'], area: 'svc' },
-		{ text: 'plan for migrations', paths: [], area: 'svc' }
+		{ text: 'cold start fails', paths: ['src/routes/**'] },
+		{ text: 'plan for migrations', paths: [] }
 	]);
-	assert.match(out, /## svc/);
+	assert.doesNotMatch(out, /^##/m); // no area headers anymore
 	assert.match(out, /- cold start fails {2}\(src\/routes\/\*\*\)/);
 	assert.match(out, /- plan for migrations/);
 });
 
-test('buildEntry: defaults, provenance, derived id, and no phase/kind', () => {
-	const e = buildEntry({ text: '  trim me  ', area: 'svc', issue: '477', pr: '485', date: '2026-05-25' });
+test('buildEntry: defaults, provenance, derived id, and no phase/kind/area', () => {
+	const e = buildEntry({ text: '  trim me  ', issue: '477', pr: '485', date: '2026-05-25' });
 	assert.equal(e.text, 'trim me');
 	assert.equal(e.status, 'active');
 	assert.deepEqual(e.paths, []);
 	assert.deepEqual(e.provenance, { issue: 477, pr: 485 });
 	assert.equal(e.id, entryId('trim me'));
-	assert.ok(!('phase' in e) && !('kind' in e), 'phase/kind are not part of the schema');
+	assert.ok(!('phase' in e) && !('kind' in e) && !('area' in e), 'phase/kind/area are not part of the schema');
 	assert.throws(() => buildEntry({ text: '   ' }));
 });

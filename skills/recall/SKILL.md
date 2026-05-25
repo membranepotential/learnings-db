@@ -26,12 +26,13 @@ project's `docs/learnings` unless configured otherwise.
      --paths <comma-separated files in scope>
    ```
 
-   Add `--area <area>` to narrow further, `--max-bytes N` to tighten the budget.
-   With no `--paths`, you get only the area-wide (cross-cutting) learnings.
+   Add `--max-bytes N` to tighten the budget. With no `--paths`, you get only the
+   global (cross-cutting, `[]`) learnings.
 
 3. **Use the returned bullets** as context for the plan/implementation. The
-   output is already grouped by area and ranked (path-specific first, then
-   newest). If the output is empty, there are simply no scoped learnings — proceed.
+   output is a flat list, ranked (path-specific first, then newest); each bullet
+   shows its path scope. If the output is empty, there are simply no scoped
+   learnings — proceed.
 
 Do **not** open `docs/learnings/*.md` or `*.ndjson` directly; that re-introduces
 the whole-file, token-heavy read this system replaces.

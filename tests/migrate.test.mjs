@@ -4,33 +4,33 @@ import { mdBulletsToEntries, parseBlameCommit, commitFilesToCandidates } from '.
 
 test('legacy [impl]/[planning] markers and trailing date are stripped from text', () => {
 	const md = '- **[impl]** Cold start fails (2026-05-25)';
-	const { entries } = mdBulletsToEntries(md, { area: 'svc' });
+	const { entries } = mdBulletsToEntries(md);
 	assert.equal(entries[0].text, 'Cold start fails');
 	assert.equal(entries[0].date, '2026-05-25');
-	assert.ok(!('phase' in entries[0]) && !('kind' in entries[0]));
+	assert.ok(!('phase' in entries[0]) && !('kind' in entries[0]) && !('area' in entries[0]));
 });
 
 test('headings are skipped, bullets under them still parse', () => {
 	const md = ['## Gotchas', '- a gotcha bullet', '## Patterns', '- a pattern bullet'].join('\n');
-	const { entries } = mdBulletsToEntries(md, { area: 'svc' });
+	const { entries } = mdBulletsToEntries(md);
 	assert.deepEqual(entries.map((e) => e.text), ['a gotcha bullet', 'a pattern bullet']);
 });
 
 test('inline backtick paths become entry.paths; non-path code does not', () => {
 	const md = '- Put it in `services/server/src/routes/**` not in `await foo()`';
-	const { entries } = mdBulletsToEntries(md, { area: 'svc' });
+	const { entries } = mdBulletsToEntries(md);
 	assert.deepEqual(entries[0].paths, ['services/server/src/routes/**']);
 });
 
-test('registry paths are the fallback when no inline path', () => {
+test('a bullet with no inline path is left global ([])', () => {
 	const md = '- A cross-cutting note with no path';
-	const { entries } = mdBulletsToEntries(md, { area: 'svc', registryPaths: ['services/server/**'] });
-	assert.deepEqual(entries[0].paths, ['services/server/**']);
+	const { entries } = mdBulletsToEntries(md);
+	assert.deepEqual(entries[0].paths, []);
 });
 
 test('low-confidence rows (no inline path) are flagged with their source line', () => {
 	const md = ['# Learnings', '', '- has a path `src/a.ts`', '- plain bullet, no path'].join('\n');
-	const { entries, flagged } = mdBulletsToEntries(md, { area: 'svc' });
+	const { entries, flagged } = mdBulletsToEntries(md);
 	assert.equal(entries.length, 2);
 	assert.equal(flagged.length, 1);
 	assert.match(flagged[0].text, /plain bullet/);
@@ -52,6 +52,6 @@ test('commitFilesToCandidates: drops blanks and excluded paths', () => {
 
 test('date falls back to opts.date when no trailing date present', () => {
 	const md = '- a bullet';
-	const { entries } = mdBulletsToEntries(md, { area: 'svc', date: '2026-05-25' });
+	const { entries } = mdBulletsToEntries(md, { date: '2026-05-25' });
 	assert.equal(entries[0].date, '2026-05-25');
 });
