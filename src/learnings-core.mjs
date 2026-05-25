@@ -116,20 +116,47 @@ export function matchEntry(entry, { paths } = {}) {
 	return entryPaths.some((g) => reqPaths.some((p) => globMatch(g, p)));
 }
 
-// Is this entry path-specific AND matched by one of the requested paths?
-function isPathSpecificMatch(entry, reqPaths) {
-	const ep = Array.isArray(entry.paths) ? entry.paths : [];
-	return ep.length > 0 && reqPaths.some((p) => ep.some((g) => globMatch(g, p)));
+// Specificity of a single glob: the length of its literal prefix up to the
+// first wildcard (`*`/`?`). An exact path (no wildcard) scores its full length;
+// `services/app/src/lib/**` scores ~20; a bare `**` scores 0. So an exact-file
+// learning, and deeper/more-anchored globs, outrank broad catch-all globs that
+// happen to also cover the file in scope.
+export function globSpecificity(glob) {
+	if (typeof glob !== 'string') return 0;
+	const g = glob.replace(/^\.\//, '');
+	const w = g.search(/[*?]/);
+	return w === -1 ? g.length : w;
 }
 
-// Rank: path-specific matches before global ([]); within a tier, newer date
-// first. Stable (preserves input order for fully-tied entries). Non-mutating.
+// Best (most specific) specificity among the entry's globs that match a
+// requested path. Returns -1 when the entry is global ([]) or none match — that
+// sentinel also marks the global tier, which ranks after every path-specific
+// match.
+function matchSpecificity(entry, reqPaths) {
+	const ep = Array.isArray(entry.paths) ? entry.paths : [];
+	let best = -1;
+	for (const g of ep) {
+		if (reqPaths.some((p) => globMatch(g, p))) best = Math.max(best, globSpecificity(g));
+	}
+	return best;
+}
+
+// Rank most-relevant-first — earlier in the list = more relevant, which is what
+// the byte budget keeps when it truncates the tail. Order:
+//   1. path-specific matches before global ([]) entries;
+//   2. within the path-specific tier, the more specific matching glob first
+//      (exact file > deep glob > broad `services/**` glob);
+//   3. then newer date first.
+// Stable (preserves input order for fully-tied entries). Non-mutating.
 export function rankEntries(entries, { paths } = {}) {
 	const reqPaths = Array.isArray(paths) ? paths.filter(Boolean) : [];
 	return [...entries].sort((a, b) => {
-		const sa = isPathSpecificMatch(a, reqPaths) ? 0 : 1;
-		const sb = isPathSpecificMatch(b, reqPaths) ? 0 : 1;
-		if (sa !== sb) return sa - sb;
+		const sa = matchSpecificity(a, reqPaths);
+		const sb = matchSpecificity(b, reqPaths);
+		const ta = sa >= 0 ? 0 : 1; // path-specific tier (0) before global (1)
+		const tb = sb >= 0 ? 0 : 1;
+		if (ta !== tb) return ta - tb;
+		if (ta === 0 && sa !== sb) return sb - sa; // more specific glob first
 		const da = a.date || '';
 		const db = b.date || '';
 		if (da !== db) return da < db ? 1 : -1; // newer (lexically larger ISO date) first
@@ -145,22 +172,43 @@ function bulletLine(e) {
 	return `- ${e.text}${where}`;
 }
 
-// Greedily keep entries (in the order given — rank first!) whose cumulative
-// rendered size stays within `max` bytes. Always returns at least the first
-// entry when the input is non-empty, so a single oversized-but-relevant
-// learning is never silently dropped. max ≤ 0 / non-finite ⇒ no bound.
-export function boundByBytes(entries, max) {
-	if (!Array.isArray(entries) || entries.length === 0) return [];
-	if (!Number.isFinite(max) || max <= 0) return [...entries];
-	const out = [];
-	let total = 0;
-	for (const e of entries) {
-		const size = Buffer.byteLength(bulletLine(e) + '\n', 'utf8');
-		if (total + size > max && out.length > 0) break;
-		out.push(e);
-		total += size;
+// Split entries (in the order given — rank first!) into successive pages, each
+// holding as many entries as fit in `max` rendered bytes. Pages are disjoint
+// and exhaustive, so a caller can walk page 1, 2, 3 … and never see the same
+// learning twice — the point of pagination here. A single oversized entry still
+// gets its own page (never silently dropped). `page` is 1-based and clamped into
+// [1, pages]. max ≤ 0 / non-finite ⇒ a single page holding everything.
+// Returns { entries, page, pages, total }.
+export function paginateByBytes(entries, max, page = 1) {
+	const list = Array.isArray(entries) ? entries : [];
+	const total = list.length;
+	if (total === 0) return { entries: [], page: 1, pages: 0, total: 0 };
+	if (!Number.isFinite(max) || max <= 0) return { entries: [...list], page: 1, pages: 1, total };
+
+	const bounds = []; // [start, end) per page
+	let i = 0;
+	while (i < total) {
+		const start = i;
+		let bytes = 0;
+		while (i < total) {
+			const size = Buffer.byteLength(bulletLine(list[i]) + '\n', 'utf8');
+			if (bytes + size > max && i > start) break; // page full; always keep ≥1
+			bytes += size;
+			i++;
+		}
+		bounds.push([start, i]);
 	}
-	return out;
+	const pages = bounds.length;
+	const p = Math.min(Math.max(1, Math.floor(Number(page)) || 1), pages);
+	const [s, e] = bounds[p - 1];
+	return { entries: list.slice(s, e), page: p, pages, total };
+}
+
+// Greedily keep entries whose cumulative rendered size stays within `max` bytes
+// — i.e. the first page. Retained as the contract's single-slice helper; callers
+// that page use paginateByBytes directly.
+export function boundByBytes(entries, max) {
+	return paginateByBytes(entries, max, 1).entries;
 }
 
 // Render entries as a flat bullet list for prompt injection, in the order given

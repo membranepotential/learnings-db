@@ -7,12 +7,11 @@ same commit. Derived from §3–§4 of `learnings-recall-learn-PLAN.md`.
 
 ## Storage (Layer 1)
 
-- One NDJSON store: `<learnings-dir>/learnings.ndjson`. One JSON object per line.
-- **Reads scan every `*.ndjson` in the dir and filter by per-entry globs** — there
-  is no area/label map for retrieval. This structurally eliminates the
-  orphaned-file bug. (Scanning all `*.ndjson`, not just `learnings.ndjson`, keeps
-  legacy per-area files working during a migration; writes always land in
-  `learnings.ndjson`.)
+- One NDJSON store **file**: `.learnings.ndjson` in the project root by default
+  (override with `--file <path>`). One JSON object per line.
+- **Reads load that one file and filter by per-entry globs** — there is no
+  area/label map and no directory scan for retrieval. A single file plus
+  per-entry globs structurally eliminates the orphaned-file bug.
 
 ### Entry schema
 
@@ -47,39 +46,60 @@ data the agent already has, e.g. `target_files`) and recency. With `area` gone,
 
 ## CLI (Layer 2)
 
-Project-agnostic; every command takes `--dir <learnings-dir>`. The stable
-invocation is the `learnings` bin on `PATH` (a symlink to this project's
-`src/cli.mjs`). Consumers call `learnings <command> …`.
+Project-agnostic; `recall`/`learn` take `--file <learnings.ndjson>` (default
+`.learnings.ndjson` in the cwd). The stable invocation is the `learnings` bin on
+`PATH` (a symlink to this project's `src/cli.mjs`). Consumers call
+`learnings <command> …`.
 
 ### `recall`
 
 ```
-learnings recall --dir <d>
+learnings recall [--file <learnings.ndjson>]   # default .learnings.ndjson
   [--paths a/b.ts,c/d.ts]   # files in scope (e.g. plan target_files); omit = global ([]) only
-  [--max-bytes 4000]        # token budget (default 4000)
+  [--max-bytes 8000]        # per-page byte budget (default 8000)
+  [--page 1]                # 1-based page of the ranked list (default 1)
   [--format text|json]      # text = flat bullets (default); json = raw entries
 ```
 
-Behavior: read all `*.ndjson`; keep `status=active`; path filter (any
-`entry.paths` glob matches any `--paths`, OR `entry.paths==[]`); **rank**
-path-specific > global, then newer > older; **bound** to `--max-bytes`; emit.
-**Exit 0 with empty output when nothing matches** — callers must tolerate empty.
+Behavior: read the store file (missing file ⇒ empty); keep `status=active`; path
+filter (any `entry.paths` glob matches any `--paths`, OR `entry.paths==[]`);
+**rank** most-relevant first; **paginate** to one `--max-bytes` page of whole
+entries; emit. **Exit 0 with empty output when nothing matches** — callers must
+tolerate empty.
+
+**Ranking — earlier = more relevant.** The list is ordered so the first bullets
+are the most relevant, which is exactly what a page keeps:
+
+1. path-specific matches before global (`[]`) entries;
+2. within the path-specific tier, the **more specific matching glob first** —
+   an exact-file learning outranks a deep glob, which outranks a broad
+   `services/**` catch-all that merely also covers the file;
+3. then newer date before older.
+
+**Pagination.** Each page holds as many whole, ranked entries as fit in
+`--max-bytes` — a learning is never split or truncated across a page boundary
+(an entry larger than the budget gets its own page). Pages are **disjoint and
+exhaustive**, so `--page 2`, `--page 3` … walk the lower-ranked tail without
+re-emitting anything the caller already saw. When more than one page exists, a
+`note: page P/N, showing … most relevant first. Re-run with --page P+1 …` line
+is written to **stderr** (stdout stays pure bullets/JSON) so the cutoff is never
+silent.
 
 ### `learn`
 
 ```
-learnings learn --dir <d> --text "..."
+learnings learn --text "..." [--file <learnings.ndjson>]   # default .learnings.ndjson
   [--paths a/**,b.ts]
   [--issue N] [--pr N] [--date YYYY-MM-DD]
-  [--target-dir <abs>]      # OVERRIDES --dir for the write (worktree rule)
+  [--target-file <abs>]     # OVERRIDES --file for the write (worktree rule)
   [--allow-dup]             # default: skip if id already present
 ```
 
 Behavior: build the entry, compute `id`; if `id` is present and not
-`--allow-dup` → no-op, print `duplicate <id>`; else append one line to
-`learnings.ndjson` (create dir/file if missing), print `added <id>`. **Always
-writes to the explicit target path** (`--target-dir` wins over `--dir`) — this
-is how stray writes are kept out of the wrong checkout.
+`--allow-dup` → no-op, print `duplicate <id>`; else append one line to the store
+file (create parent dir/file if missing), print `added <id>`. **Always writes to
+the explicit target path** (`--target-file` wins over `--file`) — this is how
+stray writes are kept out of the wrong checkout.
 
 ### `migrate` (one-time, best-effort, non-destructive)
 
@@ -111,7 +131,8 @@ paths):
 ## Pure functions (`src/learnings-core.mjs`)
 
 `normalizeForDedup`, `entryId`, `isDuplicate`, `parseEntries`, `globMatch`,
-`matchEntry`, `rankEntries`, `boundByBytes`, `renderText`, `buildEntry`,
+`matchEntry`, `globSpecificity`, `rankEntries`, `paginateByBytes`,
+`boundByBytes`, `renderText`, `buildEntry`,
 `mdBulletsToEntries`. All pure (no I/O / exit / clock except `buildEntry`'s
 default date) and unit-tested. Front doors must compose these, never reimplement
 parsing/dedup/scoping/ranking.

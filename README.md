@@ -27,13 +27,15 @@ skills/learn/SKILL.md   judgment front door -> learn
 The `learnings` bin is the stable entry point (a symlink to `src/cli.mjs` on PATH).
 
 ```bash
-# capture a learning (dedupes on normalized text) → docs/learnings/learnings.ndjson
-learnings learn --dir docs/learnings \
+# capture a learning (dedupes on normalized text) → .learnings.ndjson
+learnings learn \
   --text "Register handlers in routes.ts before the test file (vitest discovery fails cold)." \
   --paths "services/server/src/routes/**"
 
 # recall what applies to the files you're about to touch
-learnings recall --dir docs/learnings --paths services/server/src/routes/foo.ts
+learnings recall --paths services/server/src/routes/foo.ts
+
+# both default to .learnings.ndjson in the cwd; pass --file <path> to point elsewhere
 
 # one-time migrate a legacy <area>.md (non-destructive)
 learnings migrate --md docs/learnings/services-server.md
@@ -60,7 +62,7 @@ learnings migrate --md docs/learnings/services-server.md
    `recall`, falling back to the registry.
 5. ✅ `/next`: scoped `recall` is the **primary** learnings source —
    `cfg.recall.enabled` defaults **on**; the picker attaches `recalledLearnings`
-   and the compound phase records via `learnings learn --target-dir …`. The
+   and the compound phase records via `learnings learn --target-file …`. The
    legacy whole-file label map is retired per-project by setting
    `learnings.default: null` (done for `scribetech-assistant`).
 

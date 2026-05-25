@@ -41,14 +41,15 @@ One call per learning. Dedup is automatic (idempotent on normalized text):
 
 ```bash
 learnings learn \
-  --dir docs/learnings \
   --text "<one-sentence learning>" \
   --paths <glob[,glob]> \
   [--issue N] [--pr N]
 ```
 
+- Writes to `.learnings.ndjson` in the cwd by default; pass `--file <path>` to
+  target a different store.
 - It prints `added <id>` or `duplicate <id>` (already captured — fine, move on).
-- **In a worktree/trunk setup**, pass `--target-dir <worktree-abs>/docs/learnings`
+- **In a worktree/trunk setup**, pass `--target-file <worktree-abs>/.learnings.ndjson`
   so the write lands on the right branch, not the main checkout.
 
 Don't batch multiple learnings into one `--text`; one entry per learning so each

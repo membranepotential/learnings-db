@@ -7,7 +7,9 @@ import {
 	parseEntries,
 	globMatch,
 	matchEntry,
+	globSpecificity,
 	rankEntries,
+	paginateByBytes,
 	boundByBytes,
 	renderText,
 	buildEntry
@@ -85,6 +87,62 @@ test('rankEntries: path-specific before global ([]), then newer first', () => {
 	const specificNew = { paths: ['src/a.ts'], date: '2026-01-01', text: 'sp-new' };
 	const ranked = rankEntries([globalOld, specificOld, globalNew, specificNew], { paths: ['src/a.ts'] });
 	assert.deepEqual(ranked.map((e) => e.text), ['sp-new', 'sp-old', 'g-new', 'g-old']);
+});
+
+test('globSpecificity: literal prefix length; exact path > deep glob > broad', () => {
+	assert.ok(globSpecificity('a/b/c.ts') > globSpecificity('a/b/**'));
+	assert.ok(globSpecificity('a/b/**') > globSpecificity('a/**'));
+	assert.ok(globSpecificity('a/**') > globSpecificity('**'));
+	assert.equal(globSpecificity('**'), 0);
+	assert.equal(globSpecificity('./a/b.ts'), globSpecificity('a/b.ts')); // leading ./ ignored
+});
+
+test('rankEntries: a more specific matching glob outranks a broad one (same date)', () => {
+	const d = '2026-01-01';
+	const broad = { paths: ['services/app/src/lib/**'], date: d, text: 'broad' };
+	const exact = { paths: ['services/app/src/lib/components/Foo.svelte'], date: d, text: 'exact' };
+	const deep = { paths: ['services/app/src/lib/components/**'], date: d, text: 'deep' };
+	const ranked = rankEntries([broad, exact, deep], { paths: ['services/app/src/lib/components/Foo.svelte'] });
+	assert.deepEqual(ranked.map((e) => e.text), ['exact', 'deep', 'broad']);
+});
+
+test('rankEntries: specificity beats recency within the path-specific tier', () => {
+	const broadNew = { paths: ['src/**'], date: '2026-05-01', text: 'broad-new' };
+	const exactOld = { paths: ['src/a/b.ts'], date: '2024-01-01', text: 'exact-old' };
+	const ranked = rankEntries([broadNew, exactOld], { paths: ['src/a/b.ts'] });
+	assert.deepEqual(ranked.map((e) => e.text), ['exact-old', 'broad-new']);
+});
+
+test('paginateByBytes: disjoint, exhaustive, ordered pages; clamps page', () => {
+	const entries = [
+		{ text: 'a'.repeat(50), paths: [] },
+		{ text: 'b'.repeat(50), paths: [] },
+		{ text: 'c'.repeat(50), paths: [] }
+	];
+	const max = 60; // one ~53-byte bullet per page
+	const p1 = paginateByBytes(entries, max, 1);
+	const p2 = paginateByBytes(entries, max, 2);
+	const p3 = paginateByBytes(entries, max, 3);
+	assert.equal(p1.pages, 3);
+	assert.equal(p1.total, 3);
+	assert.deepEqual([p1.entries[0].text[0], p2.entries[0].text[0], p3.entries[0].text[0]], ['a', 'b', 'c']);
+	assert.equal(p1.entries.length + p2.entries.length + p3.entries.length, 3); // exhaustive, no overlap
+	// page clamps into range
+	assert.equal(paginateByBytes(entries, max, 99).page, 3);
+	assert.equal(paginateByBytes(entries, max, 0).page, 1);
+	// no bound ⇒ single page with everything
+	const all = paginateByBytes(entries, 0, 1);
+	assert.deepEqual([all.pages, all.entries.length], [1, 3]);
+	// empty input
+	assert.deepEqual(paginateByBytes([], 100, 1), { entries: [], page: 1, pages: 0, total: 0 });
+});
+
+test('paginateByBytes: an oversized entry gets its own whole page (never split)', () => {
+	const entries = [{ text: 'x'.repeat(500), paths: [] }, { text: 'small', paths: [] }];
+	const p1 = paginateByBytes(entries, 50, 1);
+	assert.equal(p1.entries.length, 1); // the oversized one, whole
+	assert.equal(p1.entries[0].text.length, 500); // not truncated
+	assert.equal(p1.pages, 2);
 });
 
 test('boundByBytes: respects budget but never returns empty for non-empty input', () => {
