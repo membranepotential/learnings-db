@@ -1,7 +1,7 @@
 {
   "name": "learnings",
   "version": "0.1.0",
-  "description": "Shared recall/learn contract over per-area NDJSON learnings files.",
+  "description": "Shared recall/learn contract over a single path-scoped NDJSON learnings store.",
   "type": "module",
   "bin": {
     "learnings": "src/cli.mjs"
