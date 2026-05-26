@@ -1,5 +1,5 @@
 > # 🤖⚠️🚨 WARNING: AI-SLOP 🚨⚠️🤖
-> 🧠💾 This repository was designed, written, migrated, and documented largely by an AI agent. 💾🧠
+> 🧠💾 This repository was designed, written, and documented largely by an AI agent. 💾🧠
 > 🪄✨ Read it with the appropriate amount of suspicion. ✨🪄
 > 🦾🤔 No human guarantees the prose below is free of confident nonsense. 🤔🦾
 
@@ -16,7 +16,7 @@ discovery ("vitest won't find this handler unless it's registered before the tes
 file") gets written down once, scoped to the paths it's about, and surfaced again
 — ranked by relevance — the next time someone (human or agent) opens those files.
 
-This is the memory layer for [**compound engineering**](https://every.to/source-code/compound-engineering-the-definitive-guide)
+This is the memory layer for [**compound engineering**](https://every.to/guides/compound-engineering)
 — the practice of building development systems where each unit of work makes the
 next one easier: every bug becomes a permanent lesson, every review updates the
 defaults. A learnings store is what lets the system *compound* instead of
@@ -109,30 +109,20 @@ Both commands default to `.learnings.ndjson` in the cwd; pass `--file <path>` to
 point elsewhere. For writes inside a worktree, `--target-file <abs>` overrides
 `--file` so a stray write never lands in the wrong checkout.
 
-### Migrate a legacy markdown file — `migrate`
-
-One-time, best-effort, non-destructive. Turns a bullet list into entries, pulling
-`paths` from inline backtick paths and `date` from a trailing `(YYYY-MM-DD)`.
-
-```bash
-learnings migrate --md docs/learnings/services-server.md
-```
-
 ## Layout 🗂️
 
 ```
 CONTRACT.md             frozen storage + CLI API (what consumers depend on)
 package.json            { "type": "module" }, zero runtime deps, Node >= 20
-src/learnings-core.mjs  pure functions (parse/glob/match/rank/bound/render/dedup/migrate)
-src/cli.mjs             recall | learn | migrate
+src/learnings-core.mjs  pure functions (parse/glob/match/rank/bound/render/dedup)
+src/cli.mjs             recall | learn
 scripts/test.sh         node --test tests/**/*.test.mjs
-tests/*.test.mjs        core + migration + CLI tests
+tests/*.test.mjs        core + CLI tests
 skills/recall/SKILL.md  Claude Code front door -> recall
 skills/learn/SKILL.md   Claude Code front door -> learn
 ```
 
-The full design lives in [`learnings-recall-learn-PLAN.md`](./learnings-recall-learn-PLAN.md);
-the frozen API every consumer depends on is in [`CONTRACT.md`](./CONTRACT.md).
+The frozen API every consumer depends on is in [`CONTRACT.md`](./CONTRACT.md).
 
 ## Test ✅
 

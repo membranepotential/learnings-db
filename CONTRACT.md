@@ -3,7 +3,7 @@
 This is the frozen interface that every front door (`/recall`, `/learn`, `/next`,
 `/ce-compound`, a future MCP) depends on. Storage and CLI behavior here are
 stable; change them only deliberately, with the tests in `tests/` updated in the
-same commit. Derived from §3–§4 of `learnings-recall-learn-PLAN.md`.
+same commit.
 
 ## Storage (Layer 1)
 
@@ -37,7 +37,7 @@ same commit. Derived from §3–§4 of `learnings-recall-learn-PLAN.md`.
 
 **Not in the contract:** there is deliberately no `phase`, `kind`, or `area`
 field. `phase`/`kind` asked the *writer* to predict the *reader's* role/bucket —
-the predict-the-consumer coupling (§1) this system exists to remove. `area` was
+the predict-the-consumer coupling this system exists to remove. `area` was
 a coarse, lossy duplicate of `paths` (`area: "services-server"` is just
 `paths: ["services/server/**"]` written less precisely) and recall already
 ignored it. Scoping is therefore **derived, not predicted**: by `paths` (from
@@ -108,38 +108,10 @@ file (create parent dir/file if missing), print `added <id>`. **Always writes to
 the explicit target path** (`--target-file` wins over `--file`) — this is how
 stray writes are kept out of the wrong checkout.
 
-### `migrate` (one-time, best-effort, non-destructive)
-
-```
-learnings migrate --md <file>.md
-  [--out <file>.ndjson]     # default: alongside the .md, named after it
-  [--blame]                 # fill candidate paths from each bullet's git history
-```
-
-Each bullet → entry: `paths` from inline backtick paths, else `[]` (global);
-`date` from a trailing `(YYYY-MM-DD)`. Legacy `[planning]`/`[impl]` markers and
-the trailing date are stripped from `text`. Keeps the `.md`. Prints
-low-confidence rows (no inline path) to stderr. To build one store from several
-`.md` files, migrate each then concatenate into `learnings.ndjson`.
-
-**Scoping a migrated learning is two stages** (a bullet rarely names its own
-paths):
-
-1. **`--blame` (deterministic).** For each low-confidence bullet, `git blame` its
-   source line → the commit that introduced it → that commit's changed files
-   (excluding the `.md` and other docs) become candidate `paths`. The
-   compound-with-code convention makes this a strong signal: a learning usually
-   ships in the same commit as the code it's about.
-2. **Agent/human tightening (judgment).** A commit touches more files than the
-   learning is really about. A Claude Code pass (or human) narrows the candidate
-   files to the precise globs and drops the irrelevant ones. This is build-order
-   step 2's curation pass; the candidates are listed on stderr to drive it.
-
 ## Pure functions (`src/learnings-core.mjs`)
 
 `normalizeForDedup`, `entryId`, `isDuplicate`, `parseEntries`, `globMatch`,
 `matchEntry`, `globSpecificity`, `rankEntries`, `paginateByBytes`,
-`boundByBytes`, `renderText`, `buildEntry`,
-`mdBulletsToEntries`. All pure (no I/O / exit / clock except `buildEntry`'s
-default date) and unit-tested. Front doors must compose these, never reimplement
-parsing/dedup/scoping/ranking.
+`boundByBytes`, `renderText`, `buildEntry`. All pure (no I/O / exit / clock
+except `buildEntry`'s default date) and unit-tested. Front doors must compose
+these, never reimplement parsing/dedup/scoping/ranking.
