@@ -1,78 +1,149 @@
-# learnings — shared `recall` + `learn`
+> # 🤖⚠️🚨 WARNING: AI-SLOP 🚨⚠️🤖
+> 🧠💾 This repository was designed, written, migrated, and documented largely by an AI agent. 💾🧠
+> 🪄✨ Read it with the appropriate amount of suspicion. ✨🪄
+> 🦾🤔 No human guarantees the prose below is free of confident nonsense. 🤔🦾
 
-One read/write contract over a queryable store of codebase-engineering learnings,
-replacing the two divergent, hand-maintained attribution maps that `/ce-compound`
-and `/next` kept over the same files. Recall returns **only the matching entries**
-(token-bounded), scoped by **path-glob + recency**; writes go through one deduping,
-correct-path implementation.
+---
 
-See [`learnings-recall-learn-PLAN.md`](./learnings-recall-learn-PLAN.md) for the
-full design and [`CONTRACT.md`](./CONTRACT.md) for the frozen API.
+# learnings — a shared `recall` + `learn` for codebase engineering 📚
 
-## Layout
+A tiny, dependency-free CLI and storage contract for **capturing** the non-obvious
+lessons you learn while working in a codebase, and **recalling** only the ones that
+apply to the files you're about to touch.
+
+Think of it as institutional memory for an engineering workflow: every painful
+discovery ("vitest won't find this handler unless it's registered before the test
+file") gets written down once, scoped to the paths it's about, and surfaced again
+— ranked by relevance — the next time someone (human or agent) opens those files.
+
+This is the memory layer for [**compound engineering**](https://every.to/source-code/compound-engineering-the-definitive-guide)
+— the practice of building development systems where each unit of work makes the
+next one easier: every bug becomes a permanent lesson, every review updates the
+defaults. A learnings store is what lets the system *compound* instead of
+relearning the same thing every session. 🔁
+
+## Why this exists 🤨
+
+This project replaces the **hand-maintained, whole-file attribution maps** that
+agent workflows used to keep over the codebase. Keeping a whole-file label map in
+sync by hand is exactly the kind of chore that rots: files move, maps don't, and
+you end up with **orphaned entries** pointing at code that no longer exists.
+
+The fix is structural, not disciplinary:
+
+- **One store, not many.** A single append-only `.learnings.ndjson` (one JSON
+  object per line) instead of a directory of per-area files plus a registry.
+- **Scoping is derived, not predicted.** Each learning carries the **path globs**
+  it applies to. Recall loads the one file and filters by glob — no directory
+  scan, no area/label map to drift out of sync. A single file + per-entry globs
+  *structurally* eliminates the orphaned-file bug.
+- **No "predict the consumer" fields.** There is deliberately no `phase`, `kind`,
+  or `area`. Those asked the *writer* to guess the *reader's* role or bucket. The
+  only scoping axis is `paths` (data the agent already has, e.g. a plan's target
+  files) plus recency. So keep your globs precise. 🎯
+- **Recall returns only what matches.** Instead of dumping a whole learnings file
+  into context, recall returns the matching entries, ranked most-relevant-first,
+  with an optional byte budget per page.
+
+## Install 🔧
+
+Zero runtime dependencies. Node ≥ 20. The stable entry point is the `learnings`
+bin on your `PATH` (a symlink to `src/cli.mjs`).
+
+```bash
+git clone https://github.com/membranepotential/learnings-db.git
+cd learnings-db
+
+# put `learnings` on PATH
+ln -sfn "$PWD/src/cli.mjs" ~/.local/bin/learnings
+
+# (optional) wire up the Claude Code /recall and /learn skills
+ln -sfn "$PWD/skills/recall" ~/.claude/skills/recall
+ln -sfn "$PWD/skills/learn"  ~/.claude/skills/learn
+```
+
+## Usage 🚀
+
+### Capture a learning — `learn`
+
+Dedupes on the normalized text (a stable 12-hex `id`), then appends one line.
+
+```bash
+learnings learn \
+  --text "Register handlers in routes.ts before the test file (vitest discovery fails cold)." \
+  --paths "services/server/src/routes/**" \
+  --issue 477 --pr 485
+```
+
+Omit `--paths` (or pass an empty list) to make a learning **global** — it then
+matches every recall as a cross-cutting note.
+
+### Recall what applies — `recall`
+
+```bash
+# what do we know about the files I'm about to edit?
+learnings recall --paths services/server/src/routes/foo.ts
+```
+
+Recall reads the store, keeps `status=active` entries, filters by path glob, and
+emits **all** matches (unbounded by default), **ranked most-relevant-first**:
+
+1. path-specific matches before global (`[]`) entries;
+2. within the path-specific tier, the **more specific matching glob first** (an
+   exact-file learning outranks a deep glob, which outranks a broad catch-all);
+3. then newer before older.
+
+Each rendered bullet ends with **why it surfaced** — `(global)` for a
+cross-cutting entry, otherwise the glob(s) that actually matched your `--paths`.
+Nothing matches? You get **exit 0 and empty output** — callers must tolerate that.
+
+```bash
+# opt into a byte budget per page; walk lower-ranked entries with --page
+learnings recall --paths src/app.ts --max-bytes 2000 --page 1
+
+# raw entries instead of flat bullets
+learnings recall --paths src/app.ts --format json
+```
+
+Both commands default to `.learnings.ndjson` in the cwd; pass `--file <path>` to
+point elsewhere. For writes inside a worktree, `--target-file <abs>` overrides
+`--file` so a stray write never lands in the wrong checkout.
+
+### Migrate a legacy markdown file — `migrate`
+
+One-time, best-effort, non-destructive. Turns a bullet list into entries, pulling
+`paths` from inline backtick paths and `date` from a trailing `(YYYY-MM-DD)`.
+
+```bash
+learnings migrate --md docs/learnings/services-server.md
+```
+
+## Layout 🗂️
 
 ```
 CONTRACT.md             frozen storage + CLI API (what consumers depend on)
 package.json            { "type": "module" }, zero runtime deps, Node >= 20
 src/learnings-core.mjs  pure functions (parse/glob/match/rank/bound/render/dedup/migrate)
 src/cli.mjs             recall | learn | migrate
-scripts/test.sh         node --test tests/**/*.test.mjs  (Node-20-safe glob)
+scripts/test.sh         node --test tests/**/*.test.mjs
 tests/*.test.mjs        core + migration + CLI tests
-skills/recall/SKILL.md  thin front door -> recall
-skills/learn/SKILL.md   judgment front door -> learn
+skills/recall/SKILL.md  Claude Code front door -> recall
+skills/learn/SKILL.md   Claude Code front door -> learn
 ```
 
-## Use
+The full design lives in [`learnings-recall-learn-PLAN.md`](./learnings-recall-learn-PLAN.md);
+the frozen API every consumer depends on is in [`CONTRACT.md`](./CONTRACT.md).
 
-The `learnings` bin is the stable entry point (a symlink to `src/cli.mjs` on PATH).
-
-```bash
-# capture a learning (dedupes on normalized text) → .learnings.ndjson
-learnings learn \
-  --text "Register handlers in routes.ts before the test file (vitest discovery fails cold)." \
-  --paths "services/server/src/routes/**"
-
-# recall what applies to the files you're about to touch
-learnings recall --paths services/server/src/routes/foo.ts
-
-# both default to .learnings.ndjson in the cwd; pass --file <path> to point elsewhere
-
-# one-time migrate a legacy <area>.md (non-destructive)
-learnings migrate --md docs/learnings/services-server.md
-```
-
-## Test
+## Test ✅
 
 ```bash
 ./scripts/test.sh
 ```
 
-## Wire-up (per PLAN §6, §10–§11)
+## License 📜
 
-1. ✅ Engine (`learnings-core.mjs` + `cli.mjs` recall/learn/migrate) + tests.
-2. ✅ `migrate` run on `scribetech-assistant` (11 legacy `<area>.md`, 881 bullets →
-   one `learnings.ndjson`). Paths were repo-rooted + tightened in a curation pass
-   (deterministic safe-repair, then subtree subagents); every glob is validated
-   against the live tree. `--blame` was a dead end there — the `.md` files were
-   bulk-reorganised in a docs-only commit, so HEAD-blame yields no code files.
-3. ✅ `/recall` + `/learn` skills.
-4. ✅ `/ce-compound` records each bullet in the store via `learnings learn` as
-   the **primary** capture (the `.md` append + `CLAUDE.md` registry are now the
-   human-readable mirror / navigation). `/ce-plan` + `/ce-review` prefer scoped
-   `recall`, falling back to the registry.
-5. ✅ `/next`: scoped `recall` is the **primary** learnings source —
-   `cfg.recall.enabled` defaults **on**; the picker attaches `recalledLearnings`
-   and the compound phase records via `learnings learn --target-file …`. The
-   legacy whole-file label map is retired per-project by setting
-   `learnings.default: null` (done for `scribetech-assistant`).
+MIT.
 
-> The integration edits live in `~/.claude/skills/{next,ce-compound,ce-plan,ce-review}`,
-> which is not a git repo — they are not version-controlled by this project.
+---
 
-Activation (already done in this environment):
-
-```bash
-ln -sfn "$PWD/skills/recall" ~/.claude/skills/recall   # /recall skill
-ln -sfn "$PWD/skills/learn"  ~/.claude/skills/learn    # /learn skill
-ln -sfn "$PWD/src/cli.mjs"   ~/.local/bin/learnings    # `learnings` on PATH
-```
+🫡 *Brought to you by an AI agent and a human who pressed Enter a lot.* 🫡
