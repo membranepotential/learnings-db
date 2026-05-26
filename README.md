@@ -37,10 +37,10 @@ The fix is structural, not disciplinary:
   it applies to. Recall loads the one file and filters by glob — no directory
   scan, no area/label map to drift out of sync. A single file + per-entry globs
   *structurally* eliminates the orphaned-file bug.
-- **No "predict the consumer" fields.** There is deliberately no `phase`, `kind`,
-  or `area`. Those asked the *writer* to guess the *reader's* role or bucket. The
-  only scoping axis is `paths` (data the agent already has, e.g. a plan's target
-  files) plus recency. So keep your globs precise. 🎯
+- **No "predict the consumer" fields.** Nothing asks the *writer* to guess the
+  *reader's* role or bucket. The only scoping axis is `paths` (data the agent
+  already has, e.g. a plan's target files) plus recency. So keep your globs
+  precise. 🎯
 - **Recall returns only what matches.** Instead of dumping a whole learnings file
   into context, recall returns the matching entries, ranked most-relevant-first,
   with an optional byte budget per page.
