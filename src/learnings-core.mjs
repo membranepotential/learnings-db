@@ -250,3 +250,37 @@ export function buildEntry({ text, paths, issue, pr, date, status } = {}) {
 		status: status || 'active'
 	};
 }
+
+// --- mutation --------------------------------------------------------------
+
+// Forget the entry with `id` from the NDJSON store text, returning the rewritten
+// text plus an outcome. This is a pure text→text transform: every line that is
+// not the target — blanks, comments, other entries, even a malformed line — is
+// preserved byte-for-byte, so a rewrite can never silently drop or reformat the
+// rest of the store. Only the first matching id is touched (ids are unique by
+// construction). Outcomes:
+//   - 'forgotten'  active entry flipped to status "deprecated" (line kept)
+//   - 'purged'     line removed entirely (--purge; removes regardless of status)
+//   - 'already'    matched but already non-active, nothing to do (soft path only)
+//   - 'not-found'  no entry with that id
+export function forgetEntry(ndjsonText, { id, purge = false } = {}) {
+	const lines = String(ndjsonText ?? '').split('\n');
+	let result = 'not-found';
+	const out = [];
+	for (const raw of lines) {
+		const trimmed = raw.trim();
+		if (!trimmed) { out.push(raw); continue; }
+		let entry;
+		try { entry = JSON.parse(trimmed); } catch { out.push(raw); continue; }
+		if (result === 'not-found' && entry && entry.id === id) {
+			if (purge) { result = 'purged'; continue; } // drop the line
+			if ((entry.status || 'active') !== 'active') { result = 'already'; out.push(raw); continue; }
+			entry.status = 'deprecated';
+			out.push(JSON.stringify(entry));
+			result = 'forgotten';
+			continue;
+		}
+		out.push(raw);
+	}
+	return { text: out.join('\n'), result };
+}

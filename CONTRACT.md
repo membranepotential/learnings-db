@@ -108,10 +108,29 @@ file (create parent dir/file if missing), print `added <id>`. **Always writes to
 the explicit target path** (`--target-file` wins over `--file`) — this is how
 stray writes are kept out of the wrong checkout.
 
+### `forget`
+
+```
+learnings forget (--id <id> | --text "...") [--file <learnings.ndjson>]   # default .learnings.ndjson
+  [--target-file <abs>]     # OVERRIDES --file for the write (worktree rule)
+  [--purge]                 # remove the line outright instead of deprecating it
+```
+
+Behavior: resolve the target `id` — given directly via `--id`, or re-derived from
+the exact learning via `--text` (same `entryId` hash `learn` used to mint it).
+**Default is a soft-delete**: flip the matching entry's `status` to `deprecated`
+so `recall` ignores it while the line stays for provenance — print `forgot <id>`.
+`--purge` removes the line entirely (regardless of status) — print `purged <id>`.
+A no-op prints and exits 0, like `learn`'s `duplicate`: `not found <id>` (no such
+id, or missing store) or `already forgotten <id>` (already non-active, soft path).
+The rewrite preserves every other line **byte-for-byte** (blanks, comments, even
+a malformed line) — only the target line is touched. Same worktree rule as
+`learn`: `--target-file` wins over `--file`.
+
 ## Pure functions (`src/learnings-core.mjs`)
 
 `normalizeForDedup`, `entryId`, `isDuplicate`, `parseEntries`, `globMatch`,
 `matchEntry`, `globSpecificity`, `rankEntries`, `paginateByBytes`,
-`boundByBytes`, `renderText`, `buildEntry`. All pure (no I/O / exit / clock
-except `buildEntry`'s default date) and unit-tested. Front doors must compose
+`boundByBytes`, `renderText`, `buildEntry`, `forgetEntry`. All pure (no I/O /
+exit / clock except `buildEntry`'s default date) and unit-tested. Front doors must compose
 these, never reimplement parsing/dedup/scoping/ranking.

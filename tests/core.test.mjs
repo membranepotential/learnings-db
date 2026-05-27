@@ -12,7 +12,8 @@ import {
 	paginateByBytes,
 	boundByBytes,
 	renderText,
-	buildEntry
+	buildEntry,
+	forgetEntry
 } from '../src/learnings-core.mjs';
 
 test('normalizeForDedup collapses case/punctuation/whitespace', () => {
@@ -189,4 +190,45 @@ test('buildEntry: defaults, provenance, derived id, and no phase/kind/area', () 
 	assert.equal(e.id, entryId('trim me'));
 	assert.ok(!('phase' in e) && !('kind' in e) && !('area' in e), 'phase/kind/area are not part of the schema');
 	assert.throws(() => buildEntry({ text: '   ' }));
+});
+
+test('forgetEntry soft-deletes by flipping status to deprecated, line kept', () => {
+	const a = buildEntry({ text: 'a learning', date: '2026-01-01' });
+	const text = JSON.stringify(a) + '\n';
+	const { text: out, result } = forgetEntry(text, { id: a.id });
+	assert.equal(result, 'forgotten');
+	const parsed = parseEntries(out);
+	assert.equal(parsed.length, 1);
+	assert.equal(parsed[0].status, 'deprecated');
+});
+
+test('forgetEntry --purge removes the line outright', () => {
+	const a = buildEntry({ text: 'gone soon', date: '2026-01-01' });
+	const { text: out, result } = forgetEntry(JSON.stringify(a) + '\n', { id: a.id, purge: true });
+	assert.equal(result, 'purged');
+	assert.equal(parseEntries(out).length, 0);
+});
+
+test('forgetEntry reports already / not-found without changing anything', () => {
+	const a = buildEntry({ text: 'already off', status: 'deprecated', date: '2026-01-01' });
+	const text = JSON.stringify(a) + '\n';
+	assert.equal(forgetEntry(text, { id: a.id }).result, 'already');
+	const miss = forgetEntry(text, { id: 'deadbeefcafe' });
+	assert.equal(miss.result, 'not-found');
+	assert.equal(miss.text, text); // untouched
+});
+
+test('forgetEntry preserves every other line byte-for-byte (incl. malformed)', () => {
+	const keep = buildEntry({ text: 'keep me', date: '2026-01-01' });
+	const drop = buildEntry({ text: 'drop me', date: '2026-01-02' });
+	const text = JSON.stringify(keep) + '\nnot json\n' + JSON.stringify(drop) + '\n';
+	const { text: out, result } = forgetEntry(text, { id: drop.id, purge: true });
+	assert.equal(result, 'purged');
+	assert.equal(out, JSON.stringify(keep) + '\nnot json\n'); // other + malformed lines intact
+});
+
+test('forgetEntry --purge removes a line regardless of its status', () => {
+	const a = buildEntry({ text: 'deprecated then purged', status: 'deprecated', date: '2026-01-01' });
+	const { result } = forgetEntry(JSON.stringify(a) + '\n', { id: a.id, purge: true });
+	assert.equal(result, 'purged');
 });

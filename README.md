@@ -57,9 +57,10 @@ cd learnings-db
 # put `learnings` on PATH
 ln -sfn "$PWD/src/cli.mjs" ~/.local/bin/learnings
 
-# (optional) wire up the Claude Code /recall and /learn skills
+# (optional) wire up the Claude Code /recall, /learn and /forget skills
 ln -sfn "$PWD/skills/recall" ~/.claude/skills/recall
 ln -sfn "$PWD/skills/learn"  ~/.claude/skills/learn
+ln -sfn "$PWD/skills/forget" ~/.claude/skills/forget
 ```
 
 ## Usage 🚀
@@ -105,7 +106,23 @@ learnings recall --paths src/app.ts --max-bytes 2000 --page 1
 learnings recall --paths src/app.ts --format json
 ```
 
-Both commands default to `.learnings.ndjson` in the cwd; pass `--file <path>` to
+### Retire a learning — `forget`
+
+When a learning turns out to be wrong or outdated, retire it by its `id` (printed
+by `learn`, or read back from `recall --format json`). The default is a
+**soft-delete** — it flips `status` to `deprecated` so recall ignores it while
+the line stays for provenance:
+
+```bash
+learnings forget --id ab12cd34ef56          # soft-delete (reversible, audited)
+learnings forget --text "the exact text"    # re-derive the id from the text
+learnings forget --id ab12cd34ef56 --purge  # remove the line outright
+```
+
+It prints `forgot <id>`, `purged <id>`, or a no-op `already forgotten <id>` /
+`not found <id>` — all exit 0.
+
+All three commands default to `.learnings.ndjson` in the cwd; pass `--file <path>` to
 point elsewhere. For writes inside a worktree, `--target-file <abs>` overrides
 `--file` so a stray write never lands in the wrong checkout.
 

@@ -116,3 +116,54 @@ test('recall on a missing store file is empty + exit 0 (callers tolerate empty)'
 	const out = run(['recall', '--file', join(tmpdir(), 'does-not-exist-' + Date.now() + '.ndjson')]);
 	assert.equal(out, '');
 });
+
+test('forget soft-deletes by id: status→deprecated, recall ignores it, line kept', () => {
+	const file = store();
+	const added = run(['learn', '--file', file, '--text', 'soon forgotten', '--paths', 'src/a.ts']);
+	const id = added.match(/^added ([0-9a-f]{12})\n$/)[1];
+
+	const out = run(['forget', '--file', file, '--id', id]);
+	assert.equal(out, `forgot ${id}\n`);
+
+	const entries = parseEntries(readFileSync(file, 'utf8'));
+	assert.equal(entries.length, 1); // line kept for provenance
+	assert.equal(entries[0].status, 'deprecated');
+	assert.equal(run(['recall', '--file', file, '--paths', 'src/a.ts']), ''); // recall ignores it
+});
+
+test('forget --text re-derives the id; --purge removes the line', () => {
+	const file = store();
+	run(['learn', '--file', file, '--text', 'purge me', '--paths', 'src/a.ts']);
+	const out = run(['forget', '--file', file, '--text', 'PURGE  me!', '--purge']); // cosmetic variant → same id
+	assert.match(out, /^purged [0-9a-f]{12}\n$/);
+	assert.equal(parseEntries(readFileSync(file, 'utf8')).length, 0);
+});
+
+test('forget no-ops report and exit 0: not found, missing store, already forgotten', () => {
+	const file = store();
+	run(['learn', '--file', file, '--text', 'once', '--paths', 'src/a.ts']);
+
+	assert.equal(run(['forget', '--file', file, '--id', 'deadbeefcafe']), 'not found deadbeefcafe\n');
+	assert.equal(run(['forget', '--file', join(tmpdir(), 'nope-' + Date.now() + '.ndjson'), '--id', 'deadbeefcafe']), 'not found deadbeefcafe\n');
+
+	const id = run(['recall', '--file', file, '--paths', 'src/a.ts', '--format', 'json']);
+	const realId = JSON.parse(id)[0].id;
+	run(['forget', '--file', file, '--id', realId]);
+	assert.equal(run(['forget', '--file', file, '--id', realId]), `already forgotten ${realId}\n`);
+});
+
+test('forget --target-file overrides --file for the write (worktree rule)', () => {
+	const a = store();
+	const b = store();
+	run(['learn', '--file', b, '--text', 'lives in b']);
+	const id = parseEntries(readFileSync(b, 'utf8'))[0].id;
+	run(['forget', '--file', a, '--target-file', b, '--id', id]);
+	assert.equal(existsSync(a), false); // never touched a
+	assert.equal(parseEntries(readFileSync(b, 'utf8'))[0].status, 'deprecated');
+});
+
+test('forget requires --id or --text', () => {
+	const r = spawnSync('node', [CLI, 'forget', '--file', store()], { encoding: 'utf8' });
+	assert.equal(r.status, 2);
+	assert.match(r.stderr, /--id or --text is required/);
+});

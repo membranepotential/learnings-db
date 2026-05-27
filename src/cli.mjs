@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// learnings CLI — the thin shell over learnings-core.mjs. Two commands:
+// learnings CLI — the thin shell over learnings-core.mjs. Three commands:
 //   recall  — read the store file, filter/rank/paginate, emit bullets|json
 //   learn   — append one deduped entry to the store file
+//   forget  — soft-delete (status→deprecated) or --purge one entry by id/text
 //
 // Project-agnostic: recall/learn take --file <learnings.ndjson> (default
 // .learnings.ndjson in the cwd). All logic lives in learnings-core; this file
 // only does argv parsing and file I/O.
 
-import { readFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import {
 	parseEntries,
@@ -16,7 +17,9 @@ import {
 	paginateByBytes,
 	renderText,
 	buildEntry,
-	isDuplicate
+	isDuplicate,
+	entryId,
+	forgetEntry
 } from './learnings-core.mjs';
 
 const HELP = `learnings — shared recall/learn over a path-scoped NDJSON learnings store
@@ -27,8 +30,12 @@ Usage:
   learnings learn   --text "..." [--file <learnings.ndjson>] [--paths a/**,b.ts]
                     [--issue N] [--pr N] [--date YYYY-MM-DD]
                     [--target-file <abs>] [--allow-dup]
+  learnings forget  (--id <id> | --text "...") [--file <learnings.ndjson>]
+                    [--target-file <abs>] [--purge]
 
 --file defaults to .learnings.ndjson in the current directory.
+forget soft-deletes by default (status→deprecated; the line is kept for
+provenance, recall ignores it). Pass --purge to remove the line outright.
 recall is unbounded by default (all matched, ranked most-relevant first); pass a
 positive --max-bytes to bound output into pages and page through with --page.
 
@@ -132,6 +139,35 @@ function cmdLearn(args) {
 	process.stdout.write(`added ${entry.id}\n`);
 }
 
+function cmdForget(args) {
+	// Same worktree rule as learn: --target-file overrides --file for the write.
+	const file = str(args['target-file']) || str(args.file) || DEFAULT_STORE;
+	// Identify the entry by its stable id, given directly or re-derived from the
+	// exact text (entryId is the same hash learn used to mint it).
+	const id = str(args.id) || (str(args.text) ? entryId(args.text) : undefined);
+	if (!id) fail('forget: --id or --text is required');
+	const purge = Boolean(args.purge);
+
+	// Missing store ⇒ nothing to forget. Print and exit 0 (a no-op, like learn's
+	// duplicate) rather than erroring — callers tolerate "not found".
+	if (!existsSync(file)) {
+		process.stdout.write(`not found ${id}\n`);
+		return;
+	}
+
+	const { text, result } = forgetEntry(readFileSync(file, 'utf8'), { id, purge });
+	if (result === 'not-found') {
+		process.stdout.write(`not found ${id}\n`);
+		return;
+	}
+	if (result === 'already') {
+		process.stdout.write(`already forgotten ${id}\n`);
+		return;
+	}
+	writeFileSync(file, text);
+	process.stdout.write(`${result === 'purged' ? 'purged' : 'forgot'} ${id}\n`);
+}
+
 function main() {
 	const [cmd, ...rest] = process.argv.slice(2);
 	const args = parseArgs(rest);
@@ -140,6 +176,8 @@ function main() {
 			return cmdRecall(args);
 		case 'learn':
 			return cmdLearn(args);
+		case 'forget':
+			return cmdForget(args);
 		case undefined:
 		case 'help':
 		case '--help':
