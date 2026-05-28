@@ -33,7 +33,9 @@ Usage:
   learnings forget  (--id <id> | --text "...") [--file <learnings.ndjson>]
                     [--target-file <abs>] [--purge]
 
---file defaults to .learnings.ndjson in the current directory.
+--file defaults to .learnings.ndjson in the current directory. Set
+$LEARNINGS_STORE to redirect all commands at one store (it overrides --file but
+not --target-file) — used to keep worktree/CI writes off the wrong checkout.
 forget soft-deletes by default (status→deprecated; the line is kept for
 provenance, recall ignores it). Pass --purge to remove the line outright.
 recall is unbounded by default (all matched, ranked most-relevant first); pass a
@@ -70,10 +72,28 @@ function parseArgs(argv) {
 const DEFAULT_STORE = '.learnings.ndjson';
 
 const str = (v) => (typeof v === 'string' && v ? v : undefined);
+
+// Resolve which store file a command reads/writes. Precedence:
+//   --target-file  (explicit per-call override — "write exactly here")
+//   $LEARNINGS_STORE  (redirect for worktree/CI setups — e.g. /next trunk mode
+//                      points this at the integration worktree's store so a bare
+//                      `learnings learn` can't strand on the wrong checkout; it
+//                      deliberately beats a relative --file so recall and learn
+//                      both hit the same store)
+//   --file         (per-call store path)
+//   DEFAULT_STORE  (.learnings.ndjson in the cwd)
+function resolveStore(args) {
+	return (
+		str(args['target-file']) ||
+		str(process.env.LEARNINGS_STORE) ||
+		str(args.file) ||
+		DEFAULT_STORE
+	);
+}
 const splitList = (v) => (typeof v === 'string' && v ? v.split(',').map((s) => s.trim()).filter(Boolean) : []);
 
 function cmdRecall(args) {
-	const file = str(args.file) || DEFAULT_STORE;
+	const file = resolveStore(args);
 	const reqPaths = splitList(args.paths);
 	// Unbounded by default: issue/planning recall wants every learning that could
 	// apply (high recall, tolerate some noise), not a sharp small page. Pass a
@@ -117,9 +137,10 @@ function cmdRecall(args) {
 
 function cmdLearn(args) {
 	if (!str(args.text)) fail('learn: --text is required');
-	// The --target-file worktree rule: always write to the explicit target path,
-	// overriding --file, so a relative-path write can't strand in the wrong checkout.
-	const file = str(args['target-file']) || str(args.file) || DEFAULT_STORE;
+	// Store resolution (see resolveStore): --target-file, then $LEARNINGS_STORE,
+	// then --file. Both overrides exist so a relative-path write can't strand in
+	// the wrong checkout (e.g. /next trunk mode redirects to the worktree store).
+	const file = resolveStore(args);
 
 	const entry = buildEntry({
 		text: args.text,
@@ -140,8 +161,8 @@ function cmdLearn(args) {
 }
 
 function cmdForget(args) {
-	// Same worktree rule as learn: --target-file overrides --file for the write.
-	const file = str(args['target-file']) || str(args.file) || DEFAULT_STORE;
+	// Same store resolution as learn (see resolveStore).
+	const file = resolveStore(args);
 	// Identify the entry by its stable id, given directly or re-derived from the
 	// exact text (entryId is the same hash learn used to mint it).
 	const id = str(args.id) || (str(args.text) ? entryId(args.text) : undefined);

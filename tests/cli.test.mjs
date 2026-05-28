@@ -34,6 +34,39 @@ test('--target-file overrides --file for the write (worktree rule)', () => {
 	assert.equal(existsSync(b), true);
 });
 
+test('$LEARNINGS_STORE redirects a bare learn off the cwd store', () => {
+	const redirected = store();
+	const env = { ...process.env, LEARNINGS_STORE: redirected };
+	// No --file/--target-file: would otherwise write .learnings.ndjson in cwd.
+	run(['learn', '--text', 'stranded without the redirect'], { env, cwd: tmp() });
+	assert.equal(existsSync(redirected), true);
+	assert.equal(parseEntries(readFileSync(redirected, 'utf8')).length, 1);
+});
+
+test('$LEARNINGS_STORE overrides --file but --target-file still wins', () => {
+	const envStore = store();
+	const fileArg = store();
+	const targetArg = store();
+	const env = { ...process.env, LEARNINGS_STORE: envStore };
+
+	// env beats an explicit --file
+	run(['learn', '--file', fileArg, '--text', 'lands in env store'], { env });
+	assert.equal(existsSync(fileArg), false);
+	assert.equal(existsSync(envStore), true);
+
+	// --target-file is the hard override, beating the env redirect
+	run(['learn', '--file', fileArg, '--target-file', targetArg, '--text', 'lands in target'], { env });
+	assert.equal(existsSync(targetArg), true);
+});
+
+test('recall reads $LEARNINGS_STORE even when --file points elsewhere', () => {
+	const envStore = store();
+	run(['learn', '--file', envStore, '--text', 'recall me via env', '--paths', 'src/**']);
+	const env = { ...process.env, LEARNINGS_STORE: envStore };
+	const out = run(['recall', '--file', store(), '--paths', 'src/a.ts'], { env });
+	assert.match(out, /recall me via env/);
+});
+
 test('learn creates the store file and its parent dir if missing', () => {
 	const file = join(tmp(), 'nested', 'deep', '.learnings.ndjson');
 	run(['learn', '--file', file, '--text', 'a note']);
